@@ -463,23 +463,278 @@ src/
 2. ✅ 大量消息滚动性能
 3. ✅ 流式响应展示流畅度
 
+## Cloudflare Pages 部署方案
+
+### 部署架构
+
+**完整的 Jamstack 架构**:
+- **前端**: Cloudflare Pages（全球 CDN 分发）
+- **后端**: Supabase Edge Functions（Serverless）
+- **数据库**: Supabase PostgreSQL（托管数据库）
+- **认证**: Supabase Auth（OAuth + JWT）
+
+### 构建配置
+
+#### 1. 构建设置
+- **构建命令**: `npm run build`
+- **输出目录**: `dist`
+- **Node 版本**: 18+
+- **环境变量**:
+  - `VITE_SUPABASE_URL`
+  - `VITE_SUPABASE_ANON_KEY`
+
+#### 2. 路由配置
+Cloudflare Pages 需要配置 SPA 路由：
+
+创建 `public/_redirects` 文件：
+```
+/*    /index.html   200
+```
+
+或使用 Cloudflare Pages Functions 配置。
+
+#### 3. 缓存策略
+
+**静态资源缓存**:
+- HTML 文件: `no-cache`（确保始终获取最新版本）
+- JS/CSS 文件: `max-age=31536000, immutable`（带 hash 的文件永久缓存）
+- 图片/字体: `max-age=31536000`（静态资源永久缓存）
+
+**Headers 配置** (通过 `_headers` 文件):
+```
+/index.html
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+```
+
+### 部署流程
+
+#### 自动部署（推荐）
+1. 连接 GitHub 仓库到 Cloudflare Pages
+2. 配置构建设置（上述配置）
+3. 添加环境变量
+4. 每次 push 到 main 分支自动部署
+
+#### 手动部署
+1. 本地运行 `npm run build`
+2. 使用 Wrangler CLI: `wrangler pages deploy dist`
+
+### Cloudflare 优化
+
+#### 1. 性能优化
+- **Auto Minify**: 启用 JS/CSS/HTML 压缩
+- **Brotli 压缩**: 自动启用
+- **HTTP/3**: Cloudflare 自动支持
+- **图片优化**: 使用 Cloudflare Images（可选）
+
+#### 2. 安全配置
+- **SSL/TLS**: 完全（严格）模式
+- **Always Use HTTPS**: 启用
+- **Security Headers**: 通过 `_headers` 文件配置
+- **Rate Limiting**: Cloudflare 防 DDoS（自动）
+
+#### 3. 自定义域名
+- 在 Cloudflare Pages 添加自定义域名
+- 自动签发 SSL 证书
+- 配置 DNS 记录（CNAME）
+
+### 构建优化
+
+#### Vite 构建配置优化
+
+```typescript
+// vite.config.ts 关键配置
+{
+  build: {
+    // 代码分割策略
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'supabase': ['@supabase/supabase-js'],
+          'ui': ['@radix-ui/*'],
+        }
+      }
+    },
+    // 压缩配置
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: true, // 生产环境移除 console
+        drop_debugger: true
+      }
+    },
+    // chunk 大小警告阈值
+    chunkSizeWarningLimit: 1000
+  }
+}
+```
+
+#### 打包优化策略
+- **代码分割**: 按路由和第三方库拆分
+- **懒加载**: 页面组件使用 React.lazy
+- **Tree Shaking**: 移除未使用的代码
+- **移除调试代码**: 生产环境移除 console.log
+
+## 成本估算与控制
+
+### Cloudflare Pages（免费计划）
+- **构建次数**: 500 次/月
+- **带宽**: 无限
+- **请求数**: 无限
+- **存储**: 20,000 文件
+- **自定义域名**: 无限
+
+**适用场景**: 中小型项目完全够用
+
+### Supabase（免费计划）
+- **数据库存储**: 500 MB
+- **带宽**: 5 GB/月
+- **Edge Functions**: 500,000 次调用/月
+- **认证用户**: 50,000 MAU
+
+**成本控制策略**:
+1. **消息分页加载**: 减少数据传输量
+2. **对话归档**: 定期清理旧对话（用户确认后）
+3. **请求缓存**: 对话列表适当缓存
+4. **监控告警**: 设置使用量告警
+
+### OpenAI/Claude API
+- **按使用量付费**: 根据 token 消耗计费
+- **成本控制**:
+  - 限制单次对话最大 token 数
+  - 用户级别速率限制（Edge Function）
+  - 历史消息裁剪（只传最近 N 轮对话）
+
+## 性能优化与最佳实践
+
+### 1. 前端性能优化
+
+#### 加载性能
+- **首屏优化**: 关键 CSS 内联，延迟加载非关键资源
+- **路由懒加载**: 按页面分割代码
+- **图片优化**: WebP 格式，响应式图片
+- **预加载**: 关键资源使用 `<link rel="preload">`
+
+#### 运行时性能
+- **虚拟滚动**: 长消息列表使用虚拟滚动
+- **防抖节流**: 输入框、滚动事件使用防抖
+- **React 优化**: useMemo、useCallback、React.memo
+- **状态管理**: 避免不必要的重渲染
+
+### 2. 数据库性能优化
+
+#### 索引策略
+- `conversations.user_id`: 加速用户对话查询
+- `conversations.updated_at`: 加速排序
+- `messages.conversation_id`: 加速消息查询
+- `messages.created_at`: 加速时间排序
+
+#### 查询优化
+- **分页查询**: 使用 `.range()` 限制返回数量
+- **字段选择**: 只查询需要的字段（避免 `SELECT *`）
+- **连接查询**: 减少多次查询（使用 JOIN）
+
+#### 数据清理
+- **定期归档**: 超过 N 天的对话可选择归档
+- **大小限制**: 单条消息长度限制
+- **对话数限制**: 每用户最多 X 个对话（自动清理最旧的）
+
+### 3. Edge Function 优化
+
+#### 请求优化
+- **连接复用**: 复用 OpenAI API 连接
+- **超时控制**: 设置合理的超时时间
+- **重试机制**: 失败自动重试（指数退避）
+
+#### 安全优化
+- **速率限制**: 用户级别 + IP 级别限流
+- **输入验证**: 验证 messages 格式和长度
+- **异常捕获**: 完善的错误处理和日志
+
+### 4. 监控与日志
+
+#### 应用监控
+- **Cloudflare Analytics**: 监控访问量、性能
+- **Supabase Dashboard**: 监控数据库性能、API 调用
+- **错误追踪**: Sentry 或类似工具（可选）
+
+#### 业务指标
+- **用户活跃度**: DAU、MAU
+- **对话量**: 每日新建对话数
+- **消息量**: 每日消息发送量
+- **API 调用成本**: OpenAI token 消耗
+
+## 数据流程图
+
+### 完整的消息发送流程
+
+```
+[用户输入消息]
+      ↓
+[前端验证 + 乐观更新]
+      ↓
+[调用 Supabase Edge Function]
+      ↓
+[Edge Function 验证用户身份]
+      ↓
+[Edge Function 保存用户消息到 DB]
+      ↓
+[Edge Function 调用 OpenAI API]
+      ↓
+[流式返回 AI 响应]
+      ↓
+[前端实时更新 UI]
+      ↓
+[前端保存完整 AI 响应到 DB]
+      ↓
+[更新 conversation.updated_at]
+      ↓
+[完成]
+```
+
+### 用户认证流程
+
+```
+[用户提交登录表单]
+      ↓
+[Supabase Auth 验证凭据]
+      ↓
+[返回 JWT token + user 信息]
+      ↓
+[前端存储 session (localStorage)]
+      ↓
+[后续请求自动携带 token]
+      ↓
+[Supabase SDK 自动刷新 token]
+```
+
 ## 后续扩展功能
 
 ### V2 功能
 - 🔄 消息编辑和删除
-- 🔄 代码高亮显示
-- 🔄 Markdown 渲染
-- 🔄 文件上传（图片、文档）
-- 🔄 对话分享功能
-- 🔄 对话搜索
+- 🔄 代码高亮显示（使用 highlight.js）
+- 🔄 Markdown 渲染（使用 react-markdown）
+- 🔄 文件上传（图片、文档，使用 Supabase Storage）
+- 🔄 对话分享功能（生成分享链接）
+- 🔄 对话搜索（全文搜索）
+- 🔄 Realtime 订阅（多设备同步）
 
 ### V3 功能
-- 🔄 多模型选择（GPT-4, Claude, etc）
+- 🔄 多模型选择（GPT-4, Claude, Gemini）
 - 🔄 System Prompt 自定义
-- 🔄 Token 使用统计
-- 🔄 对话导出（Markdown, PDF）
-- 🔄 语音输入/输出
-- 🔄 多语言支持
+- 🔄 Token 使用统计和配额管理
+- 🔄 对话导出（Markdown, PDF, JSON）
+- 🔄 语音输入/输出（Web Speech API）
+- 🔄 多语言支持（i18n）
+- 🔄 插件系统（工具调用、Function Calling）
 
 ## 参考资源
 
