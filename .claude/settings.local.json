@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/zhangbaolin/code/aibuild/wegic-agents/src/sandbox/template/vite-react-supabase/app/**)",
+      "Bash(rsync:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
