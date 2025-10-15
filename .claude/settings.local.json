@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Read(//Users/zhangbaolin/code/aibuild/wegic-agents/src/sandbox/template/vite-react-supabase/app/**)",
-      "Bash(rsync:*)"
+      "Bash(rsync:*)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm build:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Read(//Users/bowling/code/me/moryflow/packages/shared-i18n/src/**)",
+      "Read(//Users/bowling/code/me/moryflow/packages/shared-i18n/src/translations/**)",
+      "Bash(pnpm add:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

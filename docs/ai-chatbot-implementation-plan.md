@@ -1,506 +1,1020 @@
-# AI Chatbot 实现方案
+# AI Chatbot 架构设计与实现方案
 
 ## 项目概述
 
-构建一个基于 React + Supabase 的 AI Chatbot 应用，支持用户注册/登录、会话管理、实时对话等功能。
+本项目是一个基于 React + TypeScript 的现代化 AI 聊天应用，采用模块化架构设计，实现了用户认证、会话管理、流式对话、网络搜索增强等核心功能。
 
-## 功能需求
+### 核心特性
+- 用户认证系统（邮箱密码 + 验证码）
+- 多会话管理（创建、切换、删除、重命名）
+- 流式 AI 对话（实时响应展示）
+- 网络搜索增强（可选的搜索功能）
+- 响应式设计（桌面端 + 移动端）
+- 国际化支持（en, zh-CN, ja, de, ar）
+- 主题切换（深色/浅色模式）
 
-### 1. 用户认证模块
-- ✅ 用户注册（邮箱 + 密码）
-- ✅ 用户登录
-- ✅ 用户退出登录
-- ✅ 密码重置（可选，后期添加）
-- ✅ Session 持久化
-
-### 2. 聊天功能模块
-- ✅ 创建新对话
-- ✅ 查看对话历史列表
-- ✅ 发送消息
-- ✅ 接收 AI 回复（流式输出）
-- ✅ 删除对话
-- ✅ 重命名对话（可选）
-- ✅ 消息历史记录
-
-### 3. UI/UX 功能
-- ✅ 响应式设计（移动端 + 桌面端）
-- ✅ 深色/浅色主题切换（已有 ThemeProvider）
-- ✅ 加载状态提示
-- ✅ 错误处理和提示
-- ✅ 流式回复展示
+---
 
 ## 技术架构
 
-### 前端技术栈
+### 技术栈选型
+
+**前端框架与工具**
 - **框架**: React 18 + TypeScript
 - **构建工具**: Vite 5
-- **路由**: React Router v7
-- **UI 组件**: shadcn/ui + Tailwind CSS
-- **状态管理**: React Context + Hooks
-- **表单验证**: React Hook Form + Zod
-- **HTTP 客户端**: Fetch API
-- **通知**: Sonner (已集成)
+- **路由**: React Router v7（基于 file-based routing）
+- **UI 组件库**: shadcn/ui + Radix UI + Tailwind CSS
+- **状态管理**: Zustand（轻量级状态管理）+ React Context（认证状态）
+- **表单处理**: React Hook Form + Zod 验证
+- **国际化**: react-i18next
+- **通知系统**: Sonner Toast
 
-### 后端服务
-- **数据库**: Supabase (PostgreSQL)
-- **认证**: Supabase Auth
-- **实时更新**: Supabase Realtime (可选)
-- **AI 服务**: OpenAI API 
+**后端服务**（当前为占位实现，预留接口）
+- **数据库**: 本地内存存储（Map 结构），预留 Supabase/PostgreSQL 接口
+- **认证**: 本地 Token 管理，预留 Supabase Auth 接口
+- **AI 服务**: 占位实现，预留 OpenAI/Claude API 接口
+- **搜索服务**: 预留网络搜索 API 接口
 
-## 数据库设计
+---
 
-### 1. Users 表 (由 Supabase Auth 自动管理)
-Supabase Auth 自动提供 `auth.users` 表，包含：
-- id (UUID)
-- email
-- created_at
-- 等...
+## 核心架构设计
 
-### 2. conversations 表
-```sql
-CREATE TABLE conversations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  title TEXT NOT NULL DEFAULT 'New Chat',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+### 分层架构
 
--- 创建索引
-CREATE INDEX idx_conversations_user_id ON conversations(user_id);
-CREATE INDEX idx_conversations_updated_at ON conversations(updated_at DESC);
-
--- 启用 RLS (Row Level Security)
-ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
-
--- RLS 策略：用户只能访问自己的对话
-CREATE POLICY "Users can view their own conversations"
-  ON conversations FOR SELECT
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert their own conversations"
-  ON conversations FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own conversations"
-  ON conversations FOR UPDATE
-  USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own conversations"
-  ON conversations FOR DELETE
-  USING (auth.uid() = user_id);
+```
+┌─────────────────────────────────────────┐
+│          用户界面层 (UI Layer)            │
+│  Pages, Components, Layouts              │
+└────────────┬────────────────────────────┘
+             │
+┌────────────▼────────────────────────────┐
+│        业务逻辑层 (Logic Layer)           │
+│  Custom Hooks, Managers, Controllers     │
+└────────────┬────────────────────────────┘
+             │
+┌────────────▼────────────────────────────┐
+│        数据层 (Data Layer)                │
+│  Stores (Zustand), Context, Cache        │
+└────────────┬────────────────────────────┘
+             │
+┌────────────▼────────────────────────────┐
+│        服务层 (Service Layer)             │
+│  API Services, Auth Service              │
+└────────────┬────────────────────────────┘
+             │
+┌────────────▼────────────────────────────┐
+│        工具层 (Utility Layer)             │
+│  Helpers, Constants, Types               │
+└─────────────────────────────────────────┘
 ```
 
-### 3. messages 表
-```sql
-CREATE TABLE messages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-  content TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
+### 目录结构
 
--- 创建索引
-CREATE INDEX idx_messages_conversation_id ON messages(conversation_id);
-CREATE INDEX idx_messages_created_at ON messages(created_at ASC);
-
--- 启用 RLS
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-
--- RLS 策略：用户只能访问自己对话中的消息
-CREATE POLICY "Users can view messages in their conversations"
-  ON messages FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM conversations
-      WHERE conversations.id = messages.conversation_id
-      AND conversations.user_id = auth.uid()
-    )
-  );
-
-CREATE POLICY "Users can insert messages in their conversations"
-  ON messages FOR INSERT
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM conversations
-      WHERE conversations.id = messages.conversation_id
-      AND conversations.user_id = auth.uid()
-    )
-  );
-```
-
-### 4. 自动更新 updated_at 触发器
-```sql
--- 创建触发器函数
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- 应用到 conversations 表
-CREATE TRIGGER update_conversations_updated_at
-  BEFORE UPDATE ON conversations
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
-```
-
-## 页面和路由设计
-
-### 路由结构
-```
-/                          # 首页（未登录显示介绍，已登录重定向到 /chat）
-/auth/login                # 登录页面
-/auth/register             # 注册页面
-/chat                      # 聊天主界面（需要登录）
-/chat/:conversationId      # 具体对话页面（需要登录）
-```
-
-### 页面组件结构
 ```
 src/
-├── pages/
-│   ├── Home/              # 首页（欢迎页）
-│   │   └── index.tsx
-│   ├── Auth/              # 认证相关页面
-│   │   ├── Login.tsx      # 登录页
-│   │   └── Register.tsx   # 注册页
-│   ├── Chat/              # 聊天主页面
-│   │   └── index.tsx
-│   └── NotFound/          # 404 页面
-│       └── index.tsx
+├── pages/                          # 页面组件
+│   ├── Home/                       # 首页（欢迎页）
+│   ├── auth/                       # 认证页面
+│   │   ├── sign-in-page.tsx
+│   │   └── sign-up-page.tsx
+│   ├── chat/                       # 聊天页面
+│   │   └── chat-page.tsx
+│   └── not-found/                  # 404 页面
+│
+├── components/                     # 组件库
+│   ├── auth/                       # 认证相关组件
+│   │   ├── auth-card.tsx           # 认证卡片容器
+│   │   ├── email-password-form.tsx # 邮箱密码表单
+│   │   ├── sign-in-form.tsx        # 登录表单
+│   │   ├── sign-up-form.tsx        # 注册表单
+│   │   ├── verification-form.tsx   # 验证码表单
+│   │   └── with-auth.tsx           # 认证 HOC
+│   │
+│   ├── chat/                       # 聊天相关组件
+│   │   ├── chat-container.tsx      # 聊天容器（核心组件）
+│   │   ├── chat-input.tsx          # 消息输入框
+│   │   ├── message-list.tsx        # 消息列表
+│   │   ├── message-bubble.tsx      # 单条消息气泡
+│   │   ├── markdown-message.tsx    # Markdown 渲染
+│   │   ├── chat-scroll-manager.tsx # 滚动管理
+│   │   ├── virtual-message-list.tsx# 虚拟滚动列表
+│   │   ├── search-toggle.tsx       # 搜索开关
+│   │   ├── search-status.tsx       # 搜索状态显示
+│   │   ├── search-sources.tsx      # 搜索结果源
+│   │   ├── streaming-indicator.tsx # 流式响应指示器
+│   │   ├── loading-indicator.tsx   # 加载指示器
+│   │   └── chat-error-*.tsx        # 错误处理组件
+│   │
+│   ├── conversation/               # 会话管理组件
+│   │   ├── conversation-list.tsx   # 会话列表
+│   │   ├── delete-confirmation-dialog.tsx
+│   │   └── rename-dialog.tsx       # 重命名对话框
+│   │
+│   ├── sidebar/                    # 侧边栏组件
+│   │   ├── conversation-history.tsx# 会话历史
+│   │   ├── navigation-section.tsx  # 导航区域
+│   │   ├── sidebar-logo.tsx        # Logo
+│   │   └── sidebar-user-menu.tsx   # 用户菜单
+│   │
+│   ├── layouts/                    # 布局组件
+│   │   ├── app-layout.tsx          # 应用主布局
+│   │   ├── auth-layout.tsx         # 认证页面布局
+│   │   └── sidebar-layout.tsx      # 侧边栏布局
+│   │
+│   ├── guards/                     # 路由守卫
+│   │   └── auth-guard.tsx          # 认证守卫
+│   │
+│   └── ui/                         # shadcn UI 组件
+│       └── (40+ 组件)
+│
+├── router/                         # 路由配置
+│   ├── app-router.tsx              # 路由定义
+│   ├── use-app-router.ts           # 路由 Hook（适配 React Router）
+│   ├── components/
+│   │   ├── require-auth.tsx        # 需要认证的路由
+│   │   └── public-only-route.tsx   # 仅公开访问的路由
+│   └── layouts/
+│       ├── app-shell-layout.tsx    # 应用外壳
+│       └── auth-route-layout.tsx   # 认证路由布局
+│
+├── lib/                            # 核心库
+│   ├── hooks/                      # 自定义 Hooks
+│   │   ├── conversation/           # 会话相关 Hooks
+│   │   │   ├── useConversationLoader.ts  # 会话加载
+│   │   │   ├── useMessageSender.ts       # 消息发送
+│   │   │   ├── useStreamHandler.ts       # 流式处理
+│   │   │   └── useSearchState.ts         # 搜索状态
+│   │   ├── useConversationManager.ts     # 会话管理器（聚合）
+│   │   ├── useAsyncState.ts              # 异步状态管理
+│   │   ├── useVirtualScrolling.ts        # 虚拟滚动
+│   │   └── use-mobile.tsx                # 移动端检测
+│   │
+│   ├── stores/                     # Zustand 状态管理
+│   │   └── conversation-data.ts    # 会话数据 Store
+│   │
+│   ├── contexts/                   # React Context
+│   │   └── auth.context.tsx        # 认证上下文
+│   │
+│   ├── services/                   # 服务层
+│   │   ├── auth.service.ts         # 认证服务
+│   │   └── conversation-service.ts # 会话服务
+│   │
+│   ├── api/                        # API 调用层
+│   │   └── conversation-web.ts     # 会话 Web API
+│   │
+│   ├── types/                      # 类型定义
+│   │   ├── api.ts                  # API 类型
+│   │   └── conversation.ts         # 会话类型
+│   │
+│   ├── errors/                     # 错误处理
+│   │   └── chat-error.ts           # 聊天错误类
+│   │
+│   ├── utils/                      # 工具函数
+│   │   ├── conversation.ts         # 会话工具
+│   │   ├── date.ts                 # 日期工具
+│   │   ├── error-reporter.ts       # 错误上报
+│   │   ├── global-stream-manager.ts# 全局流管理
+│   │   └── resource-manager.ts     # 资源管理
+│   │
+│   ├── constants/                  # 常量配置
+│   │   ├── chat.ts                 # 聊天常量
+│   │   └── conversation.ts         # 会话常量
+│   │
+│   ├── metrics/                    # 性能指标
+│   │   └── chat-metrics.ts         # 聊天指标收集
+│   │
+│   ├── i18n-setup.ts               # 国际化配置
+│   └── supabase.ts                 # Supabase 客户端（占位）
+│
+└── i18n/                           # 国际化翻译文件
+    └── translations/               # 按模块和语言组织
+        ├── common/                 # 通用翻译
+        ├── auth/                   # 认证翻译
+        ├── chat/                   # 聊天翻译
+        ├── error/                  # 错误翻译
+        └── ...（共 10 个模块）
 ```
 
-## 组件设计
+---
 
-### 1. 需要创建的业务组件
+## 数据模型设计
 
-#### 认证组件
-- `LoginForm`: 登录表单
-- `RegisterForm`: 注册表单
-- `AuthLayout`: 认证页面布局
+### 核心数据结构
 
-#### 聊天组件
-- `ChatLayout`: 聊天页面主布局（侧边栏 + 主内容区）
-- `Sidebar`: 侧边栏（对话列表 + 新建对话按钮）
-- `ConversationList`: 对话列表
-- `ConversationItem`: 单个对话项
-- `ChatArea`: 聊天区域
-- `MessageList`: 消息列表
-- `Message`: 单条消息组件
-- `ChatInput`: 消息输入框
-- `UserMenu`: 用户下拉菜单
-- `ProtectedRoute`: 路由守卫组件
-
-### 2. 需要添加的 shadcn/ui 组件
-
-当前已有组件：
-- ✅ alert
-- ✅ button
-- ✅ card
-- ✅ dialog
-- ✅ dropdown-menu
-- ✅ form
-- ✅ input
-- ✅ label
-- ✅ select
-- ✅ sonner (toast)
-
-需要添加的组件：
-```bash
-# 添加以下 shadcn 组件
-npx shadcn@latest add avatar      # 用户头像
-npx shadcn@latest add scroll-area # 滚动区域
-npx shadcn@latest add separator   # 分隔线
-npx shadcn@latest add skeleton    # 加载骨架屏
-npx shadcn@latest add textarea    # 多行文本输入
-npx shadcn@latest add tooltip     # 提示框
+#### 1. 用户 (User)
+```typescript
+interface User {
+  id: string                 // 用户唯一标识
+  email?: string             // 邮箱
+  username?: string          // 用户名
+  avatarUrl?: string         // 头像 URL
+  createdAt?: string         // 创建时间
+  updatedAt?: string         // 更新时间
+}
 ```
 
-## AI API 集成方案
+#### 2. 会话 (Conversation)
+```typescript
+interface Conversation {
+  id: string                 // 会话唯一标识（UUID）
+  userId?: string            // 所属用户 ID
+  abstract?: string          // 会话标题/摘要
+  createdAt: string          // 创建时间（ISO 8601）
+  updatedAt: string          // 最后更新时间（ISO 8601）
+}
+```
 
-### 架构设计（Supabase Edge Functions）
+**设计说明**：
+- `id` 使用 UUID 确保全局唯一性
+- `abstract` 存储会话标题，默认为 "New Chat"，可后续自动生成或手动修改
+- `updatedAt` 用于排序会话列表（最近更新的在前）
 
-#### 核心逻辑流程
+#### 3. 消息 (Message)
+```typescript
+enum MessageRole {
+  user = 'user',              // 用户消息
+  assistant = 'assistant',    // AI 助手消息
+  system = 'system'           // 系统消息（保留）
+}
 
-**请求处理流程**:
-1. 验证用户身份（通过 Authorization header）
-2. 验证 conversationId 属于当前用户（防止越权）
-3. 保存用户消息到 messages 表
-4. 检查是否为首条消息，若是则自动生成对话标题
-5. 调用 OpenAI/Claude API 获取流式响应
-6. 记录请求日志（userId、conversationId、时间戳）
-7. 返回流式响应给前端
+interface Message {
+  id: string                  // 消息唯一标识
+  conversationId: string      // 所属会话 ID
+  content: string             // 消息内容
+  role: MessageRole           // 消息角色
+  createdAt: string           // 创建时间
+  userId?: string             // 发送者 ID（用户消息）
+  searchEvents?: SearchEvent[]// 关联的搜索事件（可选）
+}
+```
 
-**前端处理流程**:
-1. 调用 Edge Function
-2. 实时读取流式响应并更新 UI
-3. 收集完整响应后保存到 messages 表
-4. 更新 conversation 的 updated_at 时间戳
+**设计说明**：
+- 临时消息使用 `msg_` 或 `ai_` 前缀 + 随机字符串作为 ID
+- 持久化消息使用数据库生成的 UUID
+- `searchEvents` 仅在启用搜索时存在，关联到触发搜索的用户消息
 
-#### 安全控制
+#### 4. 搜索事件 (SearchEvent)
+```typescript
+interface SearchEvent {
+  id: string                  // 搜索事件 ID
+  conversationId: string      // 所属会话
+  messageId?: string          // 触发搜索的消息 ID
+  userId: string              // 发起用户
+  query: string               // 搜索查询
+  domain: string              // 搜索域（web/news/academic 等）
+  language?: string           // 搜索语言
+  timeRange?: string          // 时间范围
+  resolvedEngines: string[]   // 使用的搜索引擎
+  resultsCount: number        // 结果数量
+  durationMs: number          // 搜索耗时（毫秒）
+  cached: boolean             // 是否命中缓存
+  topSources: SearchSource[]  // 顶部搜索结果
+  error?: string              // 错误信息
+  createdAt: string           // 创建时间
+}
 
-- ✅ CORS 配置（允许前端域名）
-- ✅ 用户身份验证（必须登录）
-- ✅ 数据权限校验（RLS + Edge Function 双重验证）
-- ✅ API Key 存储在服务端环境变量
-- ✅ 错误处理和日志记录
+interface SearchSource {
+  title: string               // 标题
+  url: string                 // 链接
+  snippet: string             // 摘要
+  favicon?: string            // 网站图标
+}
+```
 
-#### 性能优化
+#### 5. 搜索状态 (SSESearchStatus)
+```typescript
+type SearchPhase = 'detected' | 'started' | 'progress' | 'complete' | 'error'
 
-- ✅ 流式响应（提升用户体验）
-- ✅ 消息分页加载（避免一次加载过多数据）
-- ✅ 请求日志异步写入（不阻塞主流程）
-- ✅ 数据库索引优化（conversation_id、created_at）
+interface SSESearchStatus {
+  type: 'search_status'       // 事件类型标识
+  phase: SearchPhase          // 搜索阶段
+  query: string               // 搜索查询
+  domain?: string             // 搜索域
+  language?: string           // 语言
+  timeRange?: string          // 时间范围
+  progress?: {
+    fetchedItems?: number     // 已获取项数
+    totalItems?: number       // 总项数
+  }
+  error?: string              // 错误信息
+}
+```
 
-## 实现步骤
+---
 
-### Phase 1: 基础设置 (1-2 小时)
-1. ✅ 在 Supabase Dashboard 创建数据库表
-2. ✅ 安装缺失的 shadcn 组件
-3. ✅ 创建基础目录结构
-4. ✅ 配置环境变量（AI API Key）
+## 状态管理架构
 
-### Phase 2: 用户认证 (2-3 小时)
-1. ✅ 创建 AuthContext 和 Provider
-2. ✅ 实现登录页面 (LoginForm)
-3. ✅ 实现注册页面 (RegisterForm)
-4. ✅ 实现 ProtectedRoute 路由守卫
-5. ✅ 添加用户菜单和退出登录功能
-6. ✅ 测试认证流程
+### 1. 全局状态：Zustand Store
 
-### Phase 3: 聊天界面 (3-4 小时)
-1. ✅ 创建 ChatLayout 主布局
-2. ✅ 实现 Sidebar（对话列表）
-3. ✅ 实现 ChatArea（消息展示区）
-4. ✅ 实现 ChatInput（消息输入）
-5. ✅ 样式调整（响应式设计）
+**ConversationDataStore**（纯数据存储）
 
-### Phase 4: 对话管理 (2-3 小时)
-1. ✅ 实现创建新对话
-2. ✅ 实现切换对话
-3. ✅ 实现删除对话
-4. ✅ 实现加载对话历史
-5. ✅ 添加空状态提示
+```typescript
+interface ConversationDataState {
+  // 用户信息
+  currentUserId: string | null
 
-### Phase 5: AI 集成 (3-4 小时)
-1. ✅ 创建 Supabase Edge Function（或选择其他方案）
-2. ✅ 实现消息发送逻辑
-3. ✅ 实现流式响应处理
-4. ✅ 添加加载状态和错误处理
-5. ✅ 测试 AI 对话功能
+  // 会话数据（Map 结构：conversationId -> Conversation）
+  conversations: Record<string, Conversation>
+  currentConversationId: string | null
 
-### Phase 6: 优化和完善 (2-3 小时)
-1. ✅ 添加消息复制功能
-2. ✅ 添加重新生成回复功能（可选）
-3. ✅ 优化加载性能
-4. ✅ 添加错误边界
-5. ✅ 完善 UI 细节
-6. ✅ 移动端适配测试
+  // 当前会话的消息（数组）
+  currentMessages: Message[]
+}
 
-**总计**: 约 13-19 小时
+interface ConversationDataActions {
+  // 会话操作
+  addConversation: (conversation: Conversation) => void
+  updateConversation: (id: string, updates: Partial<Conversation>) => void
+  removeConversation: (id: string) => void
+  setConversations: (conversations: Conversation[]) => void
+  setCurrentConversation: (conversationId: string | null) => void
+
+  // 消息操作
+  addMessage: (message: Message) => void
+  updateMessage: (messageId: string, updates: Partial<Message>) => void
+  removeMessage: (messageId: string) => void
+  setMessages: (messages: Message[]) => void
+  clearMessages: () => void
+
+  // 重置
+  reset: () => void
+}
+```
+
+**设计原则**：
+- **职责单一**：仅负责数据管理，不包含 API 调用和业务逻辑
+- **不包含状态**：不存储加载状态、错误状态（由业务 Hook 管理）
+- **性能优化**：会话使用 Map 结构提升查询性能，只保留当前会话的消息减少内存占用
+- **不可变更新**：所有更新返回新对象，触发 React 重渲染
+
+### 2. 认证状态：React Context
+
+**AuthContext**（参考 Clerk 设计）
+
+```typescript
+interface AuthContextValue {
+  // 状态
+  user: User | null           // 当前用户
+  isLoaded: boolean           // 是否加载完成
+  isSignedIn: boolean         // 是否已登录（派生状态）
+
+  // UI 状态
+  error: AuthError | null     // 错误信息
+  isLoading: boolean          // 加载中
+
+  // 核心方法
+  signIn: (credentials: SignInCredentials) => Promise<void>
+  signUp: (data: SignUpData) => Promise<void>
+  signOut: () => Promise<void>
+
+  // 工具方法
+  sendVerificationCode: (email: string, purpose: 'signup' | 'login' | 'reset') => Promise<void>
+  clearError: () => void
+  reload: () => Promise<void>
+  updateUser: (updates: Partial<User>) => void
+}
+```
+
+**设计亮点**：
+- **多标签页同步**：监听 `storage` 事件同步登录状态
+- **自定义事件**：通过 `auth:signout` 事件通知其他组件
+- **自动重定向**：登录后跳转到原页面，退出后跳转到登录页
+- **错误处理**：统一的错误状态管理
+
+---
+
+## 核心业务逻辑
+
+### 1. 会话管理器 (useConversationManager)
+
+**职责**：聚合所有会话相关的业务逻辑，提供统一的 API 接口
+
+**组合的子 Hook**：
+- `useConversationLoader`：加载会话列表和消息
+- `useMessageSender`：发送消息的准备工作
+- `useStreamHandler`：处理流式响应
+- `useSearchState`：管理搜索状态
+
+**API 接口**：
+```typescript
+interface ConversationManagerAPI {
+  // 数据
+  conversation: Conversation | null
+  messages: Message[]
+
+  // 状态
+  isLoading: boolean
+  isSending: boolean
+  isDeleting: boolean
+  isRefreshing: boolean
+  error: ChatError | null
+
+  // 搜索
+  searchState: SearchState
+  setSearchEnabled: (enabled: boolean) => void
+
+  // 操作
+  sendMessage: (content: string, options?: { enableWebSearch?: boolean }) => Promise<void>
+  refreshMessage: (messageId: string) => Promise<void>
+  deleteConversation: (conversationId: string) => Promise<void>
+  stopGenerating: () => void
+  clearError: () => void
+}
+```
+
+### 2. 消息发送流程
+
+**新会话发送流程**：
+```
+用户输入消息
+    ↓
+检查是否已登录
+    ↓
+创建新会话（本地 + 数据库）
+    ↓
+创建用户消息（临时 ID）
+    ↓
+保存用户消息到 Store（乐观更新）
+    ↓
+保存用户消息到数据库
+    ↓
+创建 AI 消息占位符（空内容）
+    ↓
+添加 AI 消息到 Store
+    ↓
+生成搜索配置（如果启用）
+    ↓
+调用流式 API（传递会话 ID + 消息列表 + 搜索配置）
+    ↓
+注册流清理函数到全局管理器
+    ↓
+更新 URL 到新会话（/chat/:conversationId）
+    ↓
+开始接收流式响应
+    ↓
+逐块更新 AI 消息内容（累积）
+    ↓
+流完成后保存完整 AI 消息到数据库
+    ↓
+完成
+```
+
+**现有会话发送流程**：
+```
+用户输入消息
+    ↓
+检查是否已登录
+    ↓
+创建用户消息（临时 ID）
+    ↓
+保存用户消息到 Store（乐观更新）
+    ↓
+保存用户消息到数据库
+    ↓
+创建 AI 消息占位符
+    ↓
+添加 AI 消息到 Store
+    ↓
+生成搜索配置
+    ↓
+调用流式 API
+    ↓
+注册流清理函数
+    ↓
+开始接收流式响应
+    ↓
+逐块更新 AI 消息内容
+    ↓
+流完成后保存到数据库
+    ↓
+更新会话的 updatedAt 时间戳
+    ↓
+完成
+```
+
+### 3. 流式响应处理
+
+**SSE 事件处理器**：
+```typescript
+interface SSEEventHandlers {
+  onContent?: (content: string) => void   // 接收内容片段
+  onDone?: () => void                     // 流完成
+  onError?: (error: Error) => void        // 流错误
+}
+```
+
+**流式处理逻辑**：
+1. **初始化**：创建空内容累积器（使用全局 Map 避免闭包问题）
+2. **接收片段**：每次收到内容片段，累加到当前内容
+3. **实时更新**：调用 `updateMessage` 更新 Store 中的消息内容
+4. **完成处理**：保存完整内容到数据库，清理累积器
+5. **错误处理**：显示错误消息，保留部分内容
+6. **资源清理**：组件卸载或新流开始时清理旧流
+
+**关键技术点**：
+- **全局 Map 管理内容**：避免 React 闭包捕获旧值
+- **流 ID 管理**：使用 `stream_${conversationId}_${messageId}` 格式唯一标识流
+- **全局流管理器**：统一管理所有活跃流，支持批量清理
+- **性能指标**：记录流开始、持续时间、错误率
+
+### 4. 搜索增强功能
+
+**搜索状态管理**：
+```typescript
+interface SearchState {
+  enabled: boolean                      // 是否启用搜索
+  currentStatus: SSESearchStatus | null // 当前搜索状态
+  currentSources: SearchSource[]        // 当前搜索结果
+}
+```
+
+**搜索流程**：
+1. 用户通过搜索开关启用/禁用搜索
+2. 发送消息时，将搜索配置传递给 API
+3. 服务端检测到需要搜索时，发送 `search_status` 事件（detected → started → progress → complete）
+4. 前端实时显示搜索进度（查询词、进度条）
+5. 搜索完成后，发送 `search_sources` 事件（包含搜索结果）
+6. 前端显示可折叠的搜索结果列表
+7. 搜索事件关联到触发的用户消息
+
+**UI 状态显示**：
+- **detected**：显示 "检测到搜索需求"
+- **started**：显示 "正在搜索: {query}"
+- **progress**：显示进度条 "已获取 X/Y 项"
+- **complete**：显示 "搜索完成，找到 N 个来源"
+- **error**：显示错误信息
+
+### 5. 消息刷新（重新生成）
+
+**刷新逻辑**：
+```
+点击 AI 消息的刷新按钮
+    ↓
+找到该 AI 消息的索引
+    ↓
+向上查找最近的用户消息
+    ↓
+收集需要删除的消息（从用户消息开始到末尾）
+    ↓
+清理当前活跃的流连接
+    ↓
+从 Store 中删除这些消息
+    ↓
+重新发送找到的用户消息
+    ↓
+开始新的流式响应
+    ↓
+完成
+```
+
+**设计考虑**：
+- 保留用户消息之前的所有历史（上下文保持完整）
+- 删除用户消息及其之后的所有内容（包括 AI 回复）
+- 重新发送时会创建新的临时消息和流
+
+---
+
+## 路由设计
+
+### 路由表
+
+```typescript
+const routes = [
+  {
+    path: '/',
+    element: <HomePage />,           // 首页（欢迎页）
+    public: true                     // 未登录可访问
+  },
+  {
+    path: '/sign-in',
+    element: <SignInPage />,         // 登录页
+    public: true,
+    redirect: { if: 'authenticated', to: '/chat' }
+  },
+  {
+    path: '/sign-up',
+    element: <SignUpPage />,         // 注册页
+    public: true,
+    redirect: { if: 'authenticated', to: '/chat' }
+  },
+  {
+    path: '/chat',
+    element: <ChatPage />,           // 聊天主页（新会话）
+    protected: true                  // 需要登录
+  },
+  {
+    path: '/chat/:conversationId',
+    element: <ChatPage />,           // 具体会话页
+    protected: true
+  },
+  {
+    path: '*',
+    element: <NotFoundPage />        // 404 页面
+  }
+]
+```
+
+### 路由守卫逻辑
+
+**RequireAuth（需要认证）**：
+```
+检查 user 是否存在
+    ↓
+如果未登录 → 重定向到 /sign-in?redirect={currentPath}
+    ↓
+如果已登录 → 渲染子组件
+```
+
+**PublicOnlyRoute（仅公开访问）**：
+```
+检查 user 是否存在
+    ↓
+如果已登录 → 重定向到 /chat
+    ↓
+如果未登录 → 渲染子组件
+```
+
+### URL 参数传递
+
+**从首页到聊天页**：
+1. 用户在首页输入消息
+2. 存储消息到 `sessionStorage.initialMessage`
+3. 存储搜索状态到 `sessionStorage.initialSearchEnabled`
+4. 导航到 `/chat`（不带会话 ID）
+5. ChatContainer 检测到初始消息 → 自动发送
+6. 发送后自动导航到 `/chat/:newConversationId`
+
+**登录重定向**：
+- 登录页 URL：`/sign-in?redirect=/chat/abc123`
+- 登录成功后自动跳转到 `redirect` 参数指定的页面
+
+---
+
+## 错误处理架构
+
+### 错误分类
+
+```typescript
+enum ErrorCode {
+  // 认证错误
+  AUTH_TOKEN_EXPIRED = 'AUTH_TOKEN_EXPIRED',
+  AUTH_TOKEN_INVALID = 'AUTH_TOKEN_INVALID',
+  AUTH_USER_NOT_FOUND = 'AUTH_USER_NOT_FOUND',
+  AUTH_INVALID_CREDENTIALS = 'AUTH_INVALID_CREDENTIALS',
+
+  // 权限错误
+  PERMISSION_DENIED = 'PERMISSION_DENIED',
+
+  // 限流错误
+  RATE_LIMIT_EXCEEDED = 'RATE_LIMIT_EXCEEDED',
+
+  // 资源错误
+  RESOURCE_NOT_FOUND = 'RESOURCE_NOT_FOUND',
+  CONVERSATION_NOT_FOUND = 'CONVERSATION_NOT_FOUND',
+
+  // 操作错误
+  MESSAGE_SEND_FAILED = 'MESSAGE_SEND_FAILED',
+  CONVERSATION_CREATE_FAILED = 'CONVERSATION_CREATE_FAILED',
+
+  // 系统错误
+  SERVICE_UNAVAILABLE = 'SERVICE_UNAVAILABLE',
+  HTTP_500 = 'HTTP_500',
+  HTTP_502 = 'HTTP_502',
+  HTTP_503 = 'HTTP_503',
+
+  // 未知错误
+  UNKNOWN_ERROR = 'UNKNOWN_ERROR'
+}
+```
+
+### ChatError 类
+
+```typescript
+class ChatError extends Error {
+  code: ErrorCode                    // 错误码
+  statusCode?: number                // HTTP 状态码
+  details?: Record<string, unknown>  // 详细信息
+  retryAfter?: number                // 重试延迟（毫秒）
+
+  constructor(code: ErrorCode, message: string, options?: ErrorOptions)
+
+  // 静态工厂方法
+  static fromError(error: unknown): ChatError
+  static fromResponse(response: Response): Promise<ChatError>
+
+  // 工具方法
+  isRetryable(): boolean             // 是否可重试
+  getDefaultRetryDelay(): number     // 获取默认重试延迟
+  toJSON(): object                   // 序列化
+}
+```
+
+### 错误处理流程
+
+**API 调用错误处理**：
+```
+调用 API
+    ↓
+发生错误
+    ↓
+判断错误类型（网络错误 / HTTP 错误 / 业务错误）
+    ↓
+转换为 ChatError
+    ↓
+根据错误码判断处理策略
+    ↓
+- 认证错误 → 清除 token，跳转登录页
+- 限流错误 → 显示倒计时，禁用重试按钮
+- 临时错误 → 提供重试按钮
+- 永久错误 → 仅显示错误信息
+    ↓
+记录错误日志/指标
+    ↓
+更新 UI 状态
+```
+
+**错误 UI 显示**：
+- **Toast 通知**：临时性、非阻塞性错误（网络请求失败）
+- **错误对话框**：需要用户确认的错误（认证失败、权限不足）
+- **内联错误**：表单验证错误
+- **错误边界**：捕获 React 组件渲染错误
+
+---
+
+## 性能优化策略
+
+### 1. 虚拟滚动
+
+**启用条件**：
+- 消息数量超过阈值（默认 50 条）
+- 可通过配置强制启用/禁用
+
+**实现逻辑**：
+```typescript
+useVirtualScrolling({
+  items: messages,              // 消息列表
+  itemHeight: 100,              // 预估每项高度
+  overscan: 5,                  // 上下缓冲项数
+  threshold: 50,                // 启用阈值
+  forceEnable: false,           // 强制启用
+  forceDisable: false           // 强制禁用
+})
+```
+
+**返回值**：
+- `virtualItems`：当前可见的项列表（带偏移量）
+- `totalHeight`：总高度
+- `shouldUseVirtual`：是否使用虚拟滚动
+
+### 2. 状态优化
+
+**避免不必要的重渲染**：
+- 使用 `useMemo` 缓存计算结果
+- 使用 `useCallback` 缓存函数引用
+- 使用 `React.memo` 包装纯组件
+- Zustand 状态选择器：只订阅需要的状态片段
+
+**示例**：
+```typescript
+// 只订阅当前消息，不订阅整个 store
+const messages = useConversationDataStore(state => state.currentMessages)
+```
+
+### 3. 代码分割
+
+**路由级别分割**：
+```typescript
+const HomePage = lazy(() => import('@/pages/Home'))
+const ChatPage = lazy(() => import('@/pages/chat/chat-page'))
+const SignInPage = lazy(() => import('@/pages/auth/sign-in-page'))
+```
+
+**组件级别分割**：
+- 大型组件（如 Markdown 渲染器）懒加载
+- 非首屏组件延迟加载
+
+### 4. 资源管理
+
+**HookResourceManager**：
+```typescript
+class HookResourceManager {
+  private disposables: Map<string, () => void>
+
+  register(key: string, dispose: () => void): void
+  unregister(key: string): void
+  dispose(key: string): void
+  disposeAll(): void
+}
+```
+
+**用途**：
+- 管理流连接的清理
+- 管理定时器
+- 管理事件监听器
+- 组件卸载时自动清理
+
+**GlobalStreamManager**：
+```typescript
+class GlobalStreamManager {
+  private streams: Map<string, StreamCleanup>
+  private resourceManager: HookResourceManager
+
+  registerStream(id: string, cleanup: StreamCleanup): void
+  cleanupStream(id: string): void
+  cleanupAll(): void
+  getResourceManager(): HookResourceManager
+}
+```
+
+---
+
+## 国际化方案
+
+### 翻译资源组织
+
+**模块化组织**：
+```
+i18n/translations/
+├── common/           # 通用翻译（按钮、操作）
+├── auth/             # 认证相关
+├── chat/             # 聊天相关
+├── error/            # 错误消息
+├── validation/       # 表单验证
+├── date/             # 日期格式
+├── user/             # 用户相关
+├── settings/         # 设置相关
+├── status/           # 状态文本
+├── note/             # 笔记相关
+└── audio/            # 音频相关
+```
+
+**每个模块包含 5 种语言**：
+- `en.ts`：英语
+- `zh-CN.ts`：简体中文
+- `ja.ts`：日语
+- `de.ts`：德语
+- `ar.ts`：阿拉伯语
+
+### 使用方式
+
+**Hook 调用**：
+```typescript
+// 通用翻译
+const t = useCommonTranslation()
+<Button>{t('actions.confirm')}</Button>
+
+// 聊天翻译
+const t = useChatTranslation()
+<Placeholder>{t('input.placeholder')}</Placeholder>
+
+// 错误翻译
+const t = useErrorTranslation()
+<Error>{t(`codes.${errorCode}`)}</Error>
+```
+
+**语言切换**：
+```typescript
+const { language, setLanguage } = useLanguage()
+await setLanguage('en')  // 切换到英语
+```
+
+**日期格式化**：
+```typescript
+const { formatDate } = useFormatter()
+formatDate(message.createdAt)  // 自动根据当前语言格式化
+```
+
+---
+
+## UI/UX 设计原则
+
+### 响应式布局
+
+**桌面端（> 768px）**：
+```
+┌────────────────────────────────────────┐
+│  Header / Navigation                    │
+├──────────┬─────────────────────────────┤
+│          │                              │
+│ Sidebar  │     Chat Area                │
+│ (260px)  │     (Flexible)               │
+│          │                              │
+│ - Logo   │  - Messages                  │
+│ - New    │  - Virtual Scroll            │
+│ - List   │  - Search Results            │
+│ - User   │  - Input                     │
+│          │                              │
+└──────────┴─────────────────────────────┘
+```
+
+**移动端（< 768px）**：
+```
+┌────────────────────────┐
+│  Header + Menu Toggle  │
+├────────────────────────┤
+│                        │
+│  Chat Area (Full)      │
+│                        │
+│  - Messages            │
+│  - Search Results      │
+│  - Input               │
+│                        │
+└────────────────────────┘
+
+Sidebar (Drawer):
+┌────────────────┐
+│ Sidebar        │
+│ - New Chat     │
+│ - History      │
+│ - User Menu    │
+└────────────────┘
+```
+
+### 交互细节
+
+**自动滚动**：
+- 加载历史消息 → 滚动到底部（无动画）
+- 新消息到达 → 平滑滚动到底部
+- 流式响应中 → 保持在底部
+- 用户主动滚动 → 暂停自动滚动，显示 "滚动到底部" 按钮
+
+**输入框行为**：
+- 支持 Shift+Enter 换行
+- Enter 发送消息
+- 自动调整高度（最多 5 行）
+- AI 回复完成后自动聚焦
+
+**加载状态**：
+- 会话列表加载 → 骨架屏
+- 消息加载 → 居中 Loading 指示器
+- 发送中 → 输入框禁用，显示停止按钮
+- 流式响应 → 显示打字动画
+
+**错误提示**：
+- 轻量错误 → Toast（3 秒自动消失）
+- 重要错误 → 对话框（需要确认）
+- 限流错误 → 显示倒计时（禁用重试）
+
+---
 
 ## 安全考虑
 
-### 1. 认证安全
-- ✅ 使用 Supabase Auth（已有安全保障）
-- ✅ 密码强度验证（前端 + Supabase 配置）
-- ✅ Session 自动过期和刷新
+### 认证安全
 
-### 2. 数据安全
-- ✅ 启用 Supabase RLS（Row Level Security）
-- ✅ 所有表都配置适当的 RLS 策略
-- ✅ 防止用户访问其他用户的数据
+**Token 管理**：
+- Token 存储在 `localStorage.app_auth_token`
+- 每次请求自动在 `Authorization: Bearer {token}` 中携带
+- Token 过期自动跳转登录页
+- 多标签页同步登录状态（storage 事件）
 
-### 3. API 安全
-- ✅ API Key 存储在服务端（Edge Functions 环境变量）
-- ✅ 前端不暴露 API Key
-- ✅ 请求速率限制（Supabase 层面）
+**密码策略**（前端验证）：
+- 最短 8 位
+- 至少包含大小写字母、数字
+- 可选：特殊字符
 
-### 4. XSS 防护
-- ✅ React 自动转义输出
-- ✅ 消息内容使用安全的渲染方式
-- ✅ 避免使用 dangerouslySetInnerHTML
+### 数据安全
 
-## 环境变量配置
+**前端防护**：
+- React 自动转义输出（防 XSS）
+- Markdown 渲染使用安全库（react-markdown + remark-gfm）
+- 不使用 `dangerouslySetInnerHTML`
+- 用户输入验证（Zod schema）
 
-### .env 文件
-```bash
-# Supabase
-VITE_SUPABASE_URL=https://wnqbfuoghfaefnidspia.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+**API 安全**（后端实现）：
+- Row Level Security（RLS）策略
+- 用户只能访问自己的会话和消息
+- API Key 存储在服务端环境变量
+- 速率限制（防止滥用）
 
-# AI API (用于 Edge Function，不要放在前端)
-# OPENAI_API_KEY=sk-xxx           # 在 Supabase Dashboard 配置
-# ANTHROPIC_API_KEY=sk-ant-xxx    # 在 Supabase Dashboard 配置
+### 隐私保护
+
+**数据隔离**：
+- 每个用户只能看到自己的会话
+- 删除会话时级联删除所有关联消息
+- 不在前端日志中记录敏感信息
+
+---
+
+## 部署方案
+
+### Cloudflare Pages 部署
+
+**构建配置**：
+```yaml
+Build command: npm run build
+Output directory: dist
+Node version: 18+
+Environment variables:
+  - VITE_SUPABASE_URL (如果使用 Supabase)
+  - VITE_SUPABASE_ANON_KEY
 ```
 
-## 项目文件结构（完成后）
-
-```
-src/
-├── components/
-│   ├── auth/
-│   │   ├── LoginForm.tsx
-│   │   ├── RegisterForm.tsx
-│   │   └── AuthLayout.tsx
-│   ├── chat/
-│   │   ├── ChatLayout.tsx
-│   │   ├── Sidebar.tsx
-│   │   ├── ConversationList.tsx
-│   │   ├── ConversationItem.tsx
-│   │   ├── ChatArea.tsx
-│   │   ├── MessageList.tsx
-│   │   ├── Message.tsx
-│   │   ├── ChatInput.tsx
-│   │   └── UserMenu.tsx
-│   ├── ui/                        # shadcn 组件
-│   ├── Lazy.tsx
-│   ├── PageLoader.tsx
-│   ├── ThemeProvider.tsx
-│   └── ProtectedRoute.tsx
-├── contexts/
-│   ├── AuthContext.tsx
-│   └── ChatContext.tsx
-├── hooks/
-│   ├── useAuth.ts
-│   ├── useChat.ts
-│   ├── useConversations.ts
-│   └── useMessages.ts
-├── lib/
-│   ├── supabase.ts
-│   ├── api.ts                     # API 调用封装
-│   └── utils.ts
-├── pages/
-│   ├── Home/
-│   ├── Auth/
-│   │   ├── Login.tsx
-│   │   └── Register.tsx
-│   ├── Chat/
-│   │   └── index.tsx
-│   └── NotFound/
-├── types/
-│   └── index.ts                   # TypeScript 类型定义
-├── routes/
-│   └── index.tsx
-├── App.tsx
-└── main.tsx
-```
-
-## API 设计
-
-### 数据操作逻辑
-
-#### 1. 认证流程
-- **注册**: email + password → Supabase Auth 自动创建 auth.users 记录
-- **登录**: 验证凭据 → 返回 JWT token → 前端存储 token
-- **登出**: 清除本地 session → 清除 Supabase session
-- **Session 持久化**: Supabase SDK 自动处理 token 刷新
-
-#### 2. 对话管理逻辑
-- **创建对话**: 插入 conversations 表（默认标题 "New Chat"）
-- **获取列表**: 按 updated_at 降序查询（最近更新的在前）
-- **删除对话**: CASCADE 删除（自动删除关联的 messages）
-- **更新标题**: 手动修改或自动生成（取首条消息前30字符）
-- **切换对话**: 加载对应的 messages 列表
-
-#### 3. 消息处理逻辑
-- **分页加载**: 每页 50 条，按 created_at 升序（最早的在前）
-- **发送消息**:
-  1. 前端乐观更新 UI（先显示用户消息）
-  2. 调用 Edge Function
-  3. 流式接收 AI 响应并实时更新
-  4. 完成后保存完整的 AI 响应到数据库
-- **消息存储**: user 和 assistant 角色的消息都保存到 messages 表
-
-#### 4. Edge Function 调用
-- **输入**: messages 数组（包含历史对话）+ conversationId
-- **输出**: 流式响应（Server-Sent Events 或 ReadableStream）
-- **错误处理**: 网络错误、API 限流、认证失败等
-
-## UI 设计参考
-
-### 布局
-- **桌面端**: 左侧固定宽度侧边栏（260-280px）+ 右侧主内容区
-- **移动端**: 侧边栏可收起，主内容区全屏
-
-### 颜色主题
-使用 shadcn/ui 默认主题变量:
-- `background`: 主背景色
-- `foreground`: 主文字色
-- `muted`: 次要背景色
-- `border`: 边框色
-- `primary`: 主题色（按钮、链接等）
-
-### 组件样式参考
-- **消息气泡**: 用户消息右对齐（蓝色），AI 回复左对齐（灰色）
-- **侧边栏**: 深色背景，对话列表项悬浮效果
-- **输入框**: 圆角边框，带发送按钮
-
-## 测试计划
-
-### 功能测试
-1. ✅ 用户注册流程
-2. ✅ 用户登录流程
-3. ✅ 创建新对话
-4. ✅ 发送消息和接收回复
-5. ✅ 切换对话
-6. ✅ 删除对话
-7. ✅ 退出登录
-
-### 边界测试
-1. ✅ 未登录访问 /chat 自动跳转登录页
-2. ✅ 已登录访问 /auth/login 自动跳转聊天页
-3. ✅ 空对话状态提示
-4. ✅ 网络错误处理
-5. ✅ API 调用失败处理
-
-### 性能测试
-1. ✅ 长对话列表加载性能
-2. ✅ 大量消息滚动性能
-3. ✅ 流式响应展示流畅度
-
-## Cloudflare Pages 部署方案
-
-### 部署架构
-
-**完整的 Jamstack 架构**:
-- **前端**: Cloudflare Pages（全球 CDN 分发）
-- **后端**: Supabase Edge Functions（Serverless）
-- **数据库**: Supabase PostgreSQL（托管数据库）
-- **认证**: Supabase Auth（OAuth + JWT）
-
-### 构建配置
-
-#### 1. 构建设置
-- **构建命令**: `npm run build`
-- **输出目录**: `dist`
-- **Node 版本**: 18+
-- **环境变量**:
-  - `VITE_SUPABASE_URL`
-  - `VITE_SUPABASE_ANON_KEY`
-
-#### 2. 路由配置
-Cloudflare Pages 需要配置 SPA 路由：
-
-创建 `public/_redirects` 文件：
+**路由配置**（`public/_redirects`）：
 ```
 /*    /index.html   200
 ```
 
-或使用 Cloudflare Pages Functions 配置。
-
-#### 3. 缓存策略
-
-**静态资源缓存**:
-- HTML 文件: `no-cache`（确保始终获取最新版本）
-- JS/CSS 文件: `max-age=31536000, immutable`（带 hash 的文件永久缓存）
-- 图片/字体: `max-age=31536000`（静态资源永久缓存）
-
-**Headers 配置** (通过 `_headers` 文件):
+**Headers 配置**（`public/_headers`）：
 ```
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
@@ -514,246 +1028,192 @@ Cloudflare Pages 需要配置 SPA 路由：
   Referrer-Policy: strict-origin-when-cross-origin
 ```
 
-### 部署流程
+### 性能优化
 
-#### 自动部署（推荐）
-1. 连接 GitHub 仓库到 Cloudflare Pages
-2. 配置构建设置（上述配置）
-3. 添加环境变量
-4. 每次 push 到 main 分支自动部署
-
-#### 手动部署
-1. 本地运行 `npm run build`
-2. 使用 Wrangler CLI: `wrangler pages deploy dist`
-
-### Cloudflare 优化
-
-#### 1. 性能优化
-- **Auto Minify**: 启用 JS/CSS/HTML 压缩
-- **Brotli 压缩**: 自动启用
-- **HTTP/3**: Cloudflare 自动支持
-- **图片优化**: 使用 Cloudflare Images（可选）
-
-#### 2. 安全配置
-- **SSL/TLS**: 完全（严格）模式
-- **Always Use HTTPS**: 启用
-- **Security Headers**: 通过 `_headers` 文件配置
-- **Rate Limiting**: Cloudflare 防 DDoS（自动）
-
-#### 3. 自定义域名
-- 在 Cloudflare Pages 添加自定义域名
-- 自动签发 SSL 证书
-- 配置 DNS 记录（CNAME）
-
-### 构建优化
-
-#### Vite 构建配置优化
-
+**构建优化**：
 ```typescript
-// vite.config.ts 关键配置
+// vite.config.ts
 {
   build: {
-    // 代码分割策略
     rollupOptions: {
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'supabase': ['@supabase/supabase-js'],
           'ui': ['@radix-ui/*'],
+          'i18n': ['react-i18next', 'i18next']
         }
       }
     },
-    // 压缩配置
     minify: 'terser',
     terserOptions: {
       compress: {
-        drop_console: true, // 生产环境移除 console
+        drop_console: true,  // 生产环境移除 console
         drop_debugger: true
       }
-    },
-    // chunk 大小警告阈值
-    chunkSizeWarningLimit: 1000
+    }
   }
 }
 ```
 
-#### 打包优化策略
-- **代码分割**: 按路由和第三方库拆分
-- **懒加载**: 页面组件使用 React.lazy
-- **Tree Shaking**: 移除未使用的代码
-- **移除调试代码**: 生产环境移除 console.log
+**CDN 优化**：
+- 静态资源永久缓存（带 hash）
+- HTML 不缓存（确保最新版本）
+- Brotli 压缩（Cloudflare 自动）
+- HTTP/3（Cloudflare 自动）
 
-## 成本估算与控制
+---
 
-### Cloudflare Pages（免费计划）
-- **构建次数**: 500 次/月
-- **带宽**: 无限
-- **请求数**: 无限
-- **存储**: 20,000 文件
-- **自定义域名**: 无限
+## 监控与指标
 
-**适用场景**: 中小型项目完全够用
+### 性能指标
 
-### Supabase（免费计划）
-- **数据库存储**: 500 MB
-- **带宽**: 5 GB/月
-- **Edge Functions**: 500,000 次调用/月
-- **认证用户**: 50,000 MAU
+**聊天指标**（`chat-metrics.ts`）：
+```typescript
+// 流式响应指标
+recordStreamStart()                          // 流开始
+recordStreamDuration(durationMs, success)    // 流持续时间
+recordStreamError(errorCode)                 // 流错误
+recordStreamStopped()                        // 流手动停止
 
-**成本控制策略**:
-1. **消息分页加载**: 减少数据传输量
-2. **对话归档**: 定期清理旧对话（用户确认后）
-3. **请求缓存**: 对话列表适当缓存
-4. **监控告警**: 设置使用量告警
-
-### OpenAI/Claude API
-- **按使用量付费**: 根据 token 消耗计费
-- **成本控制**:
-  - 限制单次对话最大 token 数
-  - 用户级别速率限制（Edge Function）
-  - 历史消息裁剪（只传最近 N 轮对话）
-
-## 性能优化与最佳实践
-
-### 1. 前端性能优化
-
-#### 加载性能
-- **首屏优化**: 关键 CSS 内联，延迟加载非关键资源
-- **路由懒加载**: 按页面分割代码
-- **图片优化**: WebP 格式，响应式图片
-- **预加载**: 关键资源使用 `<link rel="preload">`
-
-#### 运行时性能
-- **虚拟滚动**: 长消息列表使用虚拟滚动
-- **防抖节流**: 输入框、滚动事件使用防抖
-- **React 优化**: useMemo、useCallback、React.memo
-- **状态管理**: 避免不必要的重渲染
-
-### 2. 数据库性能优化
-
-#### 索引策略
-- `conversations.user_id`: 加速用户对话查询
-- `conversations.updated_at`: 加速排序
-- `messages.conversation_id`: 加速消息查询
-- `messages.created_at`: 加速时间排序
-
-#### 查询优化
-- **分页查询**: 使用 `.range()` 限制返回数量
-- **字段选择**: 只查询需要的字段（避免 `SELECT *`）
-- **连接查询**: 减少多次查询（使用 JOIN）
-
-#### 数据清理
-- **定期归档**: 超过 N 天的对话可选择归档
-- **大小限制**: 单条消息长度限制
-- **对话数限制**: 每用户最多 X 个对话（自动清理最旧的）
-
-### 3. Edge Function 优化
-
-#### 请求优化
-- **连接复用**: 复用 OpenAI API 连接
-- **超时控制**: 设置合理的超时时间
-- **重试机制**: 失败自动重试（指数退避）
-
-#### 安全优化
-- **速率限制**: 用户级别 + IP 级别限流
-- **输入验证**: 验证 messages 格式和长度
-- **异常捕获**: 完善的错误处理和日志
-
-### 4. 监控与日志
-
-#### 应用监控
-- **Cloudflare Analytics**: 监控访问量、性能
-- **Supabase Dashboard**: 监控数据库性能、API 调用
-- **错误追踪**: Sentry 或类似工具（可选）
-
-#### 业务指标
-- **用户活跃度**: DAU、MAU
-- **对话量**: 每日新建对话数
-- **消息量**: 每日消息发送量
-- **API 调用成本**: OpenAI token 消耗
-
-## 数据流程图
-
-### 完整的消息发送流程
-
-```
-[用户输入消息]
-      ↓
-[前端验证 + 乐观更新]
-      ↓
-[调用 Supabase Edge Function]
-      ↓
-[Edge Function 验证用户身份]
-      ↓
-[Edge Function 保存用户消息到 DB]
-      ↓
-[Edge Function 调用 OpenAI API]
-      ↓
-[流式返回 AI 响应]
-      ↓
-[前端实时更新 UI]
-      ↓
-[前端保存完整 AI 响应到 DB]
-      ↓
-[更新 conversation.updated_at]
-      ↓
-[完成]
+// 消息指标
+recordMessageSent()                          // 消息发送
+recordMessageReceived()                      // 消息接收
 ```
 
-### 用户认证流程
-
-```
-[用户提交登录表单]
-      ↓
-[Supabase Auth 验证凭据]
-      ↓
-[返回 JWT token + user 信息]
-      ↓
-[前端存储 session (localStorage)]
-      ↓
-[后续请求自动携带 token]
-      ↓
-[Supabase SDK 自动刷新 token]
+**错误上报**（`error-reporter.ts`）：
+```typescript
+reportError({
+  error: ChatError,
+  context: {
+    conversationId: string,
+    messageId: string,
+    userId: string
+  },
+  severity: 'error' | 'warning' | 'info'
+})
 ```
 
-## 后续扩展功能
+### 应用监控
+
+**Cloudflare Analytics**：
+- 访问量（PV/UV）
+- 页面加载时间
+- 资源加载性能
+- 地理分布
+
+**自定义事件**：
+- 用户注册/登录
+- 会话创建
+- 消息发送
+- 错误发生
+
+---
+
+## 后续扩展规划
 
 ### V2 功能
-- 🔄 消息编辑和删除
-- 🔄 代码高亮显示（使用 highlight.js）
-- 🔄 Markdown 渲染（使用 react-markdown）
-- 🔄 文件上传（图片、文档，使用 Supabase Storage）
-- 🔄 对话分享功能（生成分享链接）
-- 🔄 对话搜索（全文搜索）
-- 🔄 Realtime 订阅（多设备同步）
+
+**内容增强**：
+- 代码高亮（highlight.js）
+- LaTeX 数学公式渲染（KaTeX）
+- 图表绘制（Mermaid）
+- 文件上传（图片、文档）
+
+**交互增强**：
+- 消息编辑
+- 消息删除
+- 消息复制
+- 对话分享（生成分享链接）
+- 对话导出（Markdown/PDF/JSON）
+
+**搜索优化**：
+- 历史消息全文搜索
+- 会话标签系统
+- 会话分组管理
 
 ### V3 功能
-- 🔄 多模型选择（GPT-4, Claude, Gemini）
-- 🔄 System Prompt 自定义
-- 🔄 Token 使用统计和配额管理
-- 🔄 对话导出（Markdown, PDF, JSON）
-- 🔄 语音输入/输出（Web Speech API）
-- 🔄 多语言支持（i18n）
-- 🔄 插件系统（工具调用、Function Calling）
 
-## 参考资源
+**多模型支持**：
+- 模型选择（GPT-4, Claude, Gemini）
+- 自定义 System Prompt
+- 参数调整（temperature, top_p）
 
-- [Supabase Auth Documentation](https://supabase.com/docs/guides/auth)
-- [Supabase Database Documentation](https://supabase.com/docs/guides/database)
-- [Supabase Edge Functions](https://supabase.com/docs/guides/functions)
-- [shadcn/ui Components](https://ui.shadcn.com/)
-- [OpenAI API Documentation](https://platform.openai.com/docs/api-reference)
-- [Anthropic Claude API](https://docs.anthropic.com/)
+**高级功能**：
+- 语音输入/输出（Web Speech API）
+- 多模态输入（图片识别）
+- 插件系统（Function Calling）
+- Token 统计和配额管理
+- Realtime 订阅（多设备同步）
+
+---
+
+## 开发规范
+
+### 代码组织
+
+**文件命名**：
+- 组件文件：`PascalCase.tsx`（如 `ChatContainer.tsx`）
+- Hook 文件：`use-camel-case.ts`（如 `use-conversation-manager.ts`）
+- 工具文件：`kebab-case.ts`（如 `error-reporter.ts`）
+- 类型文件：`kebab-case.ts`（如 `conversation.ts`）
+
+**导入顺序**：
+1. React 和第三方库
+2. 路径别名导入（@/）
+3. 相对路径导入
+4. 类型导入（单独分组）
+
+### 类型安全
+
+**严格模式**：
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true
+  }
+}
+```
+
+**避免 `any`**：
+- 优先使用 `unknown`
+- 使用类型守卫（type guard）
+- 使用泛型约束
+
+### 错误处理
+
+**统一错误类**：
+- 继承 `ChatError`
+- 提供有意义的错误码
+- 包含足够的上下文信息
+
+**Try-Catch 原则**：
+- 异步操作必须 try-catch
+- 转换为 ChatError
+- 记录日志
+- 更新 UI 状态
+
+---
 
 ## 总结
 
-这是一个完整的、生产级别的 AI Chatbot 实现方案，包含：
-- ✅ 完整的用户认证系统
-- ✅ 安全的数据存储和访问控制
-- ✅ 现代化的 UI/UX 设计
-- ✅ 可扩展的架构设计
-- ✅ 详细的实现步骤
+本文档详细描述了 AI Chatbot 应用的架构设计、数据模型、业务逻辑、状态管理、路由设计、错误处理、性能优化、国际化、安全考虑和部署方案。
 
-预计总开发时间：**13-19 小时**（单人开发）
+**核心设计原则**：
+1. **模块化**：职责清晰，低耦合高内聚
+2. **类型安全**：TypeScript 严格模式，完善的类型定义
+3. **性能优先**：虚拟滚动、代码分割、资源管理
+4. **用户体验**：流式响应、乐观更新、自动滚动
+5. **可扩展性**：预留接口、插件系统、多语言支持
+6. **可维护性**：统一规范、清晰注释、完善文档
 
-建议按照 Phase 1-6 的顺序逐步实现，每个阶段完成后进行测试，确保功能正常后再进入下一阶段。
+**技术亮点**：
+- 基于 Zustand 的轻量级状态管理
+- 流式响应的全局资源管理
+- 乐观更新 + 错误回滚机制
+- 虚拟滚动优化长列表性能
+- 完善的错误处理和用户提示
+- 多语言国际化支持（5 种语言）
+
+该架构设计为生产级应用，具备良好的扩展性和维护性，可根据实际需求灵活调整和扩展功能。
