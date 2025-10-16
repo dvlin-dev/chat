@@ -13,7 +13,7 @@ const AuthRouteLayout = lazy(() =>
   import('@/router/layouts/auth-route-layout').then((mod) => ({ default: mod.AuthRouteLayout }))
 )
 
-const HomePage = lazy(() => import('@/pages/home/home-page').then((mod) => ({ default: mod.HomePage })))
+const HomePage = lazy(() => import('@/pages/home'))
 const ChatPage = lazy(() => import('@/pages/chat/chat-page').then((mod) => ({ default: mod.ChatPage })))
 const SignInPage = lazy(() =>
   import('@/pages/auth/sign-in-page').then((mod) => ({ default: mod.SignInPage }))
