@@ -4,7 +4,6 @@ import { MessageBubble } from './message-bubble'
 import { LoadingIndicator } from './loading-indicator'
 import { StreamingIndicator } from './streaming-indicator'
 import type { Message } from '@/lib/types/conversation'
-import type { SSESearchSources, SSESearchStatus } from '@/lib/types/api'
 
 interface MessageListProps {
   messages: Message[]
@@ -12,15 +11,10 @@ interface MessageListProps {
   isSending?: boolean
   onScroll?: () => void
   onRefreshMessage?: (messageId: string) => void
-  searchSources?: SSESearchSources | null
-  searchStatus?: SSESearchStatus | null
 }
 
 const MessageListComponent = forwardRef<HTMLDivElement, MessageListProps>(
-  (
-    { messages, isLoading, isSending, onScroll, onRefreshMessage, searchSources, searchStatus },
-    ref
-  ) => {
+  ({ messages, isLoading, isSending, onScroll, onRefreshMessage }, ref) => {
     // 设置滚动事件监听
     useEffect(() => {
       if (!ref || typeof ref === 'function' || !ref.current || !onScroll) return
@@ -69,8 +63,6 @@ const MessageListComponent = forwardRef<HTMLDivElement, MessageListProps>(
                     index === messages.length - 1 &&
                     isSending
                   }
-                  searchSources={isLastAssistantMessage ? searchSources : null}
-                  searchStatus={isLastAssistantMessage ? searchStatus : null}
                 />
               )
             })}

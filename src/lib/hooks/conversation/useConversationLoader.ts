@@ -87,19 +87,50 @@ export function useConversationLoader({
         )
 
         if (loadedMessages && loadedMessages.length > 0) {
-          setMessages(loadedMessages)
+          const latestMessages = useConversationDataStore.getState().currentMessages
+          const currentById = new Map(latestMessages.map((msg) => [msg.id, msg]))
+          const remoteById = new Map(loadedMessages.map((msg) => [msg.id, msg]))
+
+          const merged = loadedMessages.map((remote) => {
+            const local = currentById.get(remote.id)
+            if (!local) return remote
+
+            console.log('[conversation-loader] merge message', {
+              id: remote.id,
+              remoteContentLength: remote.content?.length ?? 0,
+              localContentLength: local.content?.length ?? 0,
+            })
+
+            return {
+              ...local,
+              createdAt: remote.createdAt ?? local.createdAt,
+              metadata: remote.metadata ?? local.metadata,
+              tokenCount: remote.tokenCount ?? local.tokenCount,
+              error: remote.error ?? local.error,
+            }
+          })
+
+          for (const local of latestMessages) {
+            if (!remoteById.has(local.id)) {
+              merged.push(local)
+            }
+          }
+
+          merged.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+
+          setMessages(merged)
         } else {
-          setMessages([])
+          setMessages(useConversationDataStore.getState().currentMessages)
         }
       } catch (error) {
         console.error('加载会话消息失败:', error)
         // 错误已在 messagesAsync 中处理
-        setMessages([])
+        setMessages(useConversationDataStore.getState().currentMessages)
       } finally {
         loadingRef.current.delete(targetConversationId)
       }
     },
-    [currentMessages, setMessages, messagesAsync]
+    [setMessages, messagesAsync]
   )
 
   /**

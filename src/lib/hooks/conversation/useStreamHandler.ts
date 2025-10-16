@@ -88,6 +88,7 @@ export function useStreamHandler(): UseStreamHandlerReturn {
         onDone: async () => {
           // 流式响应完成，清理累积内容
           const finalContent = contentMap.get(aiMessageId) || ''
+          console.log('[stream-handler] final content length', finalContent.length, finalContent)
           const t1 = typeof performance !== 'undefined' ? performance.now() : Date.now()
           if (startedAtRef.current != null) recordStreamDuration(t1 - startedAtRef.current, true)
 

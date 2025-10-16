@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/contexts/auth.context'
 import { useMessageSender } from './conversation/useMessageSender'
 import { useStreamHandler } from './conversation/useStreamHandler'
 import { useConversationLoader } from './conversation/useConversationLoader'
-import { useSearchState } from './conversation/useSearchState'
 import { conversationService } from '@/lib/services/conversation-service'
 import { useAsyncState } from './useAsyncState'
 import { completionsStream } from '@/lib/api/conversation-web'
@@ -33,12 +32,8 @@ export interface ConversationManagerAPI {
   // 错误状态
   error: ChatError | null
 
-  // 搜索相关
-  searchState: ReturnType<typeof useSearchState>['searchState']
-  setSearchEnabled: (enabled: boolean) => void
-
   // 核心操作
-  sendMessage: (content: string, options?: { enableWebSearch?: boolean }) => Promise<void>
+  sendMessage: (content: string) => Promise<void>
   refreshMessage: (messageId: string) => Promise<void>
   deleteConversation: (conversationId: string) => Promise<void>
   stopGenerating: () => void
@@ -64,7 +59,6 @@ export function useConversationManager({
   const messageSender = useMessageSender()
   const streamHandler = useStreamHandler()
   const conversationLoader = useConversationLoader({ conversationId })
-  const searchStateManager = useSearchState()
 
   // 本地状态
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -85,7 +79,7 @@ export function useConversationManager({
    * 发送消息
    */
   const sendMessage = useCallback(
-    async (content: string, options?: { enableWebSearch?: boolean }) => {
+    async (content: string) => {
       if (!user?.id) {
         throw new ChatError(ErrorCode.AUTH_TOKEN_EXPIRED, '请先登录')
       }
@@ -116,19 +110,11 @@ export function useConversationManager({
             ...streamHandler.createStreamHandlers(aiMessageId),
           }
 
-          // 获取搜索参数 - 优先使用传入的参数，否则使用全局状态
-          const searchParams = options?.enableWebSearch !== undefined 
-            ? { enableWebSearch: options.enableWebSearch }
-            : searchStateManager.getSearchParams()
-
-          console.log('🔍 Final search params for new conversation:', searchParams)
-
           // 开始流式连接 - 使用全局资源管理器
           const cleanup = await completionsStream(
             {
               conversationId: newConversationId,
               messages: [{ content, role: MessageRole.user }],
-              ...searchParams,
             },
             handlers,
             globalStreamManager.getResourceManager()
@@ -153,19 +139,11 @@ export function useConversationManager({
             ...streamHandler.createStreamHandlers(aiMessageId),
           }
 
-          // 获取搜索参数 - 优先使用传入的参数，否则使用全局状态
-          const searchParams = options?.enableWebSearch !== undefined 
-            ? { enableWebSearch: options.enableWebSearch }
-            : searchStateManager.getSearchParams()
-
-          console.log('🔍 Final search params for existing conversation:', searchParams)
-
           // 开始流式连接 - 使用全局资源管理器
           const cleanup = await completionsStream(
             {
               conversationId: targetConversationId,
               messages: [{ content, role: MessageRole.user }],
-              ...searchParams, // 添加搜索配置
             },
             handlers,
             globalStreamManager.getResourceManager()
@@ -179,7 +157,7 @@ export function useConversationManager({
         throw error
       }
     },
-    [user, conversationId, messageSender, streamHandler, searchStateManager, dataStore, router]
+    [user, conversationId, messageSender, streamHandler, dataStore, router]
   )
 
   /**
@@ -332,10 +310,6 @@ export function useConversationManager({
 
     // 错误状态
     error,
-
-    // 搜索相关
-    searchState: searchStateManager.searchState,
-    setSearchEnabled: searchStateManager.setSearchEnabled,
 
     // 核心操作
     sendMessage,

@@ -27,7 +27,7 @@ interface UseMessageSenderReturn {
 export function useMessageSender(): UseMessageSenderReturn {
   const { user } = useAuth()
   const dataStore = useConversationDataStore()
-  const { addMessage, addConversation, setCurrentConversation } = dataStore
+  const { addMessage, addConversation, setCurrentConversation, updateMessage } = dataStore
   
   // 使用新的异步状态管理
   const sendAsync = useAsyncState<unknown>()
@@ -74,12 +74,27 @@ export function useMessageSender(): UseMessageSenderReturn {
         // 先创建用户消息
         const userMessage = createUserMessage(conv.id, content, user.id)
         addMessage(userMessage)
-        await conversationService.saveMessage(userMessage)
+        const persistedUserMessage = await conversationService.saveMessage(userMessage)
+        updateMessage(userMessage.id, {
+          id: persistedUserMessage.id,
+          createdAt: persistedUserMessage.createdAt,
+          metadata: persistedUserMessage.metadata,
+          tokenCount: persistedUserMessage.tokenCount,
+        })
+        userMessage.id = persistedUserMessage.id
+        userMessage.createdAt = persistedUserMessage.createdAt
 
         // 然后创建 AI 消息占位符（时间戳会稍晚）
         const aiMessage = createAIMessagePlaceholder(conv.id)
+        aiMessage.userId = user.id
         addMessage(aiMessage)
-        await conversationService.saveMessage(aiMessage)
+        const persistedAiMessage = await conversationService.saveMessage(aiMessage)
+        updateMessage(aiMessage.id, {
+          id: persistedAiMessage.id,
+          createdAt: persistedAiMessage.createdAt,
+        })
+        aiMessage.id = persistedAiMessage.id
+        aiMessage.createdAt = persistedAiMessage.createdAt
 
         return {
           userMessageId: userMessage.id,
@@ -116,12 +131,27 @@ export function useMessageSender(): UseMessageSenderReturn {
         // 先创建用户消息
         const userMessage = createUserMessage(conversationId, content, user.id)
         addMessage(userMessage)
-        await conversationService.saveMessage(userMessage)
+        const persistedUserMessage = await conversationService.saveMessage(userMessage)
+        updateMessage(userMessage.id, {
+          id: persistedUserMessage.id,
+          createdAt: persistedUserMessage.createdAt,
+          metadata: persistedUserMessage.metadata,
+          tokenCount: persistedUserMessage.tokenCount,
+        })
+        userMessage.id = persistedUserMessage.id
+        userMessage.createdAt = persistedUserMessage.createdAt
 
         // 然后创建 AI 占位消息（时间戳会稍晚）
         const aiMessage = createAIMessagePlaceholder(conversationId)
+        aiMessage.userId = user.id
         addMessage(aiMessage)
-        await conversationService.saveMessage(aiMessage)
+        const persistedAiMessage = await conversationService.saveMessage(aiMessage)
+        updateMessage(aiMessage.id, {
+          id: persistedAiMessage.id,
+          createdAt: persistedAiMessage.createdAt,
+        })
+        aiMessage.id = persistedAiMessage.id
+        aiMessage.createdAt = persistedAiMessage.createdAt
 
         return {
           userMessageId: userMessage.id,

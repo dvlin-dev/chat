@@ -1,9 +1,3 @@
-/**
- * 对话功能类型定义
- * 基于 conversation.md 架构设计
- */
-
-import type { SearchEvent } from '@/lib/types/api'
 import { ErrorCode } from '@/lib/types/api'
 import { ChatError } from '@/lib/errors/chat-error'
 
@@ -21,8 +15,9 @@ export interface Message {
   role: MessageRole
   createdAt: string
   userId?: string
-  // 关联的搜索事件（通常挂在触发搜索的用户消息上）
-  searchEvents?: SearchEvent[]
+  metadata?: Record<string, unknown>
+  tokenCount?: number
+  error?: string
 }
 
 // 会话类型

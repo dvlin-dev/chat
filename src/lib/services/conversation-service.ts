@@ -1,106 +1,109 @@
 import { ChatError } from '@/lib/errors/chat-error'
 import type { Conversation, Message } from '@/lib/types/conversation'
-import { ErrorCode } from '@/lib/types/api'
+import {
+  ensureConversation as supabaseEnsureConversation,
+  fetchConversations as supabaseFetchConversations,
+  fetchMessages as supabaseFetchMessages,
+  insertMessage as supabaseInsertMessage,
+  updateMessage as supabaseUpdateMessage,
+  renameConversation as supabaseRenameConversation,
+  deleteConversation as supabaseDeleteConversation,
+} from '@/lib/services/supabase-conversations'
 
-interface ConversationRecord extends Conversation {
-  userId: string
-}
-
-const conversations = new Map<string, ConversationRecord>()
-const messagesByConversation = new Map<string, Message[]>()
-
-function nowIso(): string {
-  return new Date().toISOString()
-}
-
-function ensureId(id?: string | null): string {
-  if (id) return id
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID()
+function mapMessageToInsert(message: Message) {
+  return {
+    id: message.id,
+    conversationId: message.conversationId,
+    role: message.role,
+    content: message.content,
+    userId: message.userId,
+    metadata: message.metadata,
+    tokenCount: message.tokenCount,
+    error: message.error,
+    createdAt: message.createdAt,
   }
-  return `conv_${Math.random().toString(36).slice(2, 10)}`
 }
 
-function cloneMessage(message: Message): Message {
-  return { ...message, searchEvents: message.searchEvents ? [...message.searchEvents] : undefined }
-}
+class ConversationService {
+  private static instance: ConversationService
 
-export class ConversationService {
+  private constructor() {}
+
+  static getInstance(): ConversationService {
+    if (!ConversationService.instance) {
+      ConversationService.instance = new ConversationService()
+    }
+    return ConversationService.instance
+  }
+
   async ensureConversation(params: {
     userId: string
     conversationId?: string | null
     name?: string
   }): Promise<Conversation> {
-    const id = ensureId(params.conversationId)
-    const existing = conversations.get(id)
-    if (existing) {
-      return { ...existing }
+    try {
+      return await supabaseEnsureConversation(params)
+    } catch (error) {
+      throw ChatError.fromError(error, 'conversation')
     }
-
-    const timestamp = nowIso()
-    const conversation: ConversationRecord = {
-      id,
-      userId: params.userId,
-      abstract: params.name ?? 'New Chat',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }
-    conversations.set(id, conversation)
-    if (!messagesByConversation.has(id)) {
-      messagesByConversation.set(id, [])
-    }
-    return { ...conversation }
   }
 
   async fetchConversations(userId: string): Promise<Conversation[]> {
-    return Array.from(conversations.values())
-      .filter((conv) => conv.userId === userId)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .map((conv) => ({ ...conv }))
+    try {
+      return await supabaseFetchConversations(userId)
+    } catch (error) {
+      throw ChatError.fromError(error, 'conversation')
+    }
   }
 
   async fetchMessages(conversationId: string): Promise<Message[]> {
-    const list = messagesByConversation.get(conversationId) ?? []
-    return list.map(cloneMessage)
+    try {
+      return await supabaseFetchMessages(conversationId)
+    } catch (error) {
+      throw ChatError.fromError(error, 'message')
+    }
   }
 
-  async saveMessage(message: Message): Promise<void> {
-    const list = messagesByConversation.get(message.conversationId)
-    if (!list) {
-      messagesByConversation.set(message.conversationId, [cloneMessage(message)])
-      return
-    }
-    list.push(cloneMessage(message))
-
-    const conv = conversations.get(message.conversationId)
-    if (conv) {
-      conv.updatedAt = nowIso()
+  async saveMessage(message: Message): Promise<Message> {
+    try {
+      const saved = await supabaseInsertMessage(mapMessageToInsert(message))
+      return saved
+    } catch (error) {
+      throw ChatError.fromError(error, 'message')
     }
   }
 
   async updateMessage(messageId: string, patch: Partial<Message>): Promise<void> {
-    for (const list of messagesByConversation.values()) {
-      const index = list.findIndex((m) => m.id === messageId)
-      if (index !== -1) {
-        list[index] = { ...list[index], ...patch }
-        return
+    try {
+      if (patch.content) {
+        console.log('[conversation-service] updateMessage content length', patch.content.length)
       }
+      await supabaseUpdateMessage(messageId, {
+        content: patch.content,
+        metadata: patch.metadata,
+        tokenCount: patch.tokenCount,
+        error: patch.error,
+      })
+    } catch (error) {
+      throw ChatError.fromError(error, 'message')
     }
   }
 
   async renameConversation(conversationId: string, name: string): Promise<void> {
-    const conv = conversations.get(conversationId)
-    if (!conv) {
-      throw new ChatError(ErrorCode.CONVERSATION_NOT_FOUND, '会话不存在')
+    try {
+      await supabaseRenameConversation(conversationId, name)
+    } catch (error) {
+      throw ChatError.fromError(error, 'conversation')
     }
-    conv.abstract = name
-    conv.updatedAt = nowIso()
   }
 
   async deleteConversation(conversationId: string): Promise<void> {
-    conversations.delete(conversationId)
-    messagesByConversation.delete(conversationId)
+    try {
+      await supabaseDeleteConversation(conversationId)
+    } catch (error) {
+      throw ChatError.fromError(error, 'conversation')
+    }
   }
 }
 
-export const conversationService = new ConversationService()
+export const conversationService = ConversationService.getInstance()

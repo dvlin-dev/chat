@@ -59,14 +59,14 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
 
   // 处理消息发送
   const handleSendMessage = useCallback(
-    async (content: string, options?: { enableWebSearch?: boolean }) => {
+    async (content: string) => {
       if (!content.trim()) return
 
       try {
         // 发送消息前立即滚动（用户消息会立即显示）
         scrollManagerRef.current?.scrollToBottom(false)
 
-        await conversationManager.sendMessage(content.trim(), options)
+        await conversationManager.sendMessage(content.trim())
 
         // 发送后再次滚动确保显示用户消息
         setTimeout(() => scrollManagerRef.current?.scrollToBottom(true), 100)
@@ -159,34 +159,12 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
   useEffect(() => {
     if (!conversationId && conversationManager.messages.length === 0 && user?.id) {
       const initialMessage = sessionStorage.getItem('initialMessage')
-      const initialSearchEnabled = sessionStorage.getItem('initialSearchEnabled')
 
       if (initialMessage?.trim()) {
         // 清理 sessionStorage
         sessionStorage.removeItem('initialMessage')
-        sessionStorage.removeItem('initialSearchEnabled')
 
-        // 解析搜索状态
-        let enableWebSearch: boolean | undefined
-        if (initialSearchEnabled === 'true') {
-          enableWebSearch = true
-        } else if (initialSearchEnabled === 'false') {
-          enableWebSearch = false
-        }
-
-        console.log('🔍 Processing initial message with search config:', {
-          message: initialMessage.trim(),
-          enableWebSearch,
-        })
-
-        // 如果有明确的搜索配置，同时设置全局状态（为了UI显示）和直接传递参数
-        if (enableWebSearch !== undefined) {
-          conversationManager.setSearchEnabled(enableWebSearch)
-          handleSendMessage(initialMessage.trim(), { enableWebSearch }).catch(console.error)
-        } else {
-          // 没有搜索状态配置，直接发送消息（使用全局状态）
-          handleSendMessage(initialMessage.trim()).catch(console.error)
-        }
+        handleSendMessage(initialMessage.trim()).catch(console.error)
       }
     }
   }, [
@@ -218,8 +196,6 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
           isLoading={conversationManager.isLoading}
           isSending={conversationManager.isSending}
           onRefreshMessage={handleRefreshMessage}
-          searchSources={conversationManager.searchState.currentSources}
-          searchStatus={conversationManager.searchState.currentStatus}
           virtualScrollOptions={{
             threshold: CHAT_CONFIG.VIRTUAL_LIST_THRESHOLD, // 启用虚拟滚动的消息数量阈值
             forceEnable: false, // 可通过环境变量控制
@@ -238,8 +214,6 @@ export function ChatContainer({ conversationId }: ChatContainerProps) {
               disabled={conversationManager.isSending}
               placeholder={!conversationId ? '开始新的对话...' : '输入消息...'}
               onHeightChange={() => {}} // 暂时不需要处理高度变化
-              searchEnabled={conversationManager.searchState.enabled}
-              onSearchToggle={conversationManager.setSearchEnabled}
             />
           </div>
         </div>

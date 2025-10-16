@@ -12,7 +12,6 @@ import { ArrowUp, Paperclip } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CHAT_CONFIG } from '@/lib/constants/chat'
 import { useChatTranslation } from '@/lib/i18n-setup'
-import { SimpleSearchToggle } from './simple-search-toggle'
 
 interface ChatInputProps {
   onSend: (message: string) => Promise<void>
@@ -22,9 +21,6 @@ interface ChatInputProps {
   placeholder?: string
   className?: string
   onHeightChange?: (height: number) => void
-  searchEnabled?: boolean
-  onSearchToggle?: (enabled: boolean) => void
-  searchToggleDisabled?: boolean
 }
 
 export interface ChatInputRef {
@@ -40,9 +36,6 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(function ChatI
     placeholder,
     className,
     onHeightChange,
-    searchEnabled = false,
-    onSearchToggle,
-    searchToggleDisabled = false,
   },
   ref
 ) {
@@ -182,15 +175,6 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(function ChatI
             >
               <Paperclip className="h-4 w-4 text-muted-foreground" />
             </Button>
-
-            {/* 联网搜索开关 */}
-            {onSearchToggle && (
-              <SimpleSearchToggle
-                enabled={searchEnabled}
-                onToggle={onSearchToggle}
-                disabled={disabled || searchToggleDisabled}
-              />
-            )}
 
             {/* 未来可以在这里添加更多操作按钮 */}
           </div>

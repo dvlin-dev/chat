@@ -16,7 +16,6 @@ import { MessageList } from './message-list'
 import { VirtualMessageList, type VirtualMessageListRef } from './virtual-message-list'
 import { useVirtualScrolling } from '@/lib/hooks/useVirtualScrolling'
 import { type Message } from '@/lib/types/conversation'
-import type { SSESearchSources, SSESearchStatus } from '@/lib/types/api'
 
 export interface ChatScrollManagerRef {
   scrollToBottom: (smooth?: boolean) => void
@@ -28,9 +27,6 @@ interface ChatScrollManagerProps {
   isSending?: boolean
   onRefreshMessage?: (messageId: string) => void
   className?: string
-  // 搜索结果相关
-  searchSources?: SSESearchSources | null
-  searchStatus?: SSESearchStatus | null
   // 虚拟滚动选项
   virtualScrollOptions?: {
     threshold?: number
@@ -47,8 +43,6 @@ export const ChatScrollManager = forwardRef<ChatScrollManagerRef, ChatScrollMana
       isSending = false,
       onRefreshMessage,
       className = '',
-      searchSources,
-      searchStatus,
       virtualScrollOptions,
     },
     ref
@@ -141,8 +135,6 @@ export const ChatScrollManager = forwardRef<ChatScrollManagerRef, ChatScrollMana
             isSending={isSending}
             onRefreshMessage={onRefreshMessage}
             onScroll={handleScroll}
-            searchSources={searchSources}
-            searchStatus={searchStatus}
           />
         )}
 

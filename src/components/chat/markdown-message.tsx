@@ -8,53 +8,17 @@ import type React from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
-import type { SSESearchSources } from '@/lib/types/api'
 
 interface MarkdownMessageProps {
   content: string
-  searchSources?: SSESearchSources | null
   className?: string
 }
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   content,
-  searchSources,
   className,
 }: MarkdownMessageProps) {
-  // 处理内容，自动检测并添加参考资料引用
-  const processedContent = useMemo(() => {
-    if (!searchSources?.sources || searchSources.sources.length === 0) {
-      return content
-    }
-
-    let processedText = content
-
-    // 检查内容中是否已经有 [1], [2] 等引用标记
-    const hasExistingReferences = /\[\d+\]/.test(content)
-
-    if (hasExistingReferences) {
-      // 如果已有引用标记，将它们转换为可点击的链接
-      searchSources.sources.forEach((source, index) => {
-        const refNum = index + 1
-        const pattern = new RegExp(`\\[${refNum}\\]`, 'g')
-        const domain = new URL(source.url).hostname.replace('www.', '')
-
-        // 使用上标格式的链接，更加美观
-        const replacement = `[^${refNum}^](${source.url} "${source.title} - ${domain}")`
-        processedText = processedText.replace(pattern, replacement)
-      })
-    } else {
-      // 如果没有引用标记，在内容末尾添加参考资料部分
-      // 使用更紧凑的格式
-      processedText += '\n\n'
-      searchSources.sources.forEach((source, index) => {
-        const domain = new URL(source.url).hostname.replace('www.', '')
-        processedText += `[${index + 1}] [${source.title}](${source.url}) *(${domain})*  \n`
-      })
-    }
-
-    return processedText
-  }, [content, searchSources])
+  const processedContent = useMemo(() => content, [content])
 
   return (
     <div

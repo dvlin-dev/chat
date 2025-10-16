@@ -1,145 +1,213 @@
-# MoryFlow Web 迁移复用方案
+# MoryFlow Chat 架构与 Supabase 集成计划
 
-## 范围与约束
-- 目标：在 Vite + React 单项目中实现 `docs/ai-chatbot-implementation-plan.md:5-31` 描述的 Supabase Chatbot。
-- 多语言能力允许复用；笔记模块及相关 UI/状态全部排除。
-- 新项目不引入 monorepo 结构，需将复用代码直接拷贝或改写到单仓库 `src/` 目录。
-- 迁移时移除所有本地缓存（IndexedDB 等）。后端数据全部依赖 Supabase。
+## 当前架构概览
 
-## 可复用模块概览
-### 应用壳与导航
-- **受保护路由与布局**：`AppShellLayout` 结合 `RequireAuth` 可提供登录态守卫与侧边布局（`apps/web/src/router/layouts/app-shell-layout.tsx:1-18`, `apps/web/src/router/components/require-auth.tsx:12-36`).
-- **侧边栏框架**：`SidebarLayout` + `AppSidebar` 组件提供聊天主界面的响应式壳层和会话导航（`apps/web/components/layouts/sidebar-layout.tsx:1-29`, `apps/web/components/app-sidebar.tsx:21-145`).
-  - 迁移时删除 `NavigationSection` 中与笔记/设置无关的入口，仅保留聊天、设置、语言切换等必要项。
+### 项目目标
+- 构建支持多会话的流式 AI 聊天体验，兼容桌面与移动端使用场景。
+- 保持严格的类型安全与性能基线，为后续模型扩展与企业能力预留空间。
+- 通过清晰的数据结构与职责边界，降低功能演进与团队协作的复杂度。
 
-### 聊天界面与交互
-- **主容器**：`ChatContainer` 管理消息流、错误提示、自动滚动、初始消息注入逻辑，复用可直接满足计划中的聊天 UX（`apps/web/components/chat/chat-container.tsx:23-239`).
-- **输入区与辅助 UI**：`ChatInput`、`ChatErrorDisplay`、`SimpleSearchToggle`、`ScrollToBottomButton` 等组件可直接复用，配合状态切换实现联网搜索开关与重试提示（`apps/web/components/chat/chat-input.tsx:34-197`, `apps/web/components/chat/chat-error-display.tsx:1-78`).
-- **消息渲染**：`MessageList`、`MessageBubble`、`MarkdownMessage`、`VirtualMessageList` 提供流式、虚拟滚动、复制、重新生成、搜索引用展示能力（`apps/web/components/chat/message-list.tsx:1-63`, `apps/web/components/chat/message-bubble.tsx:1-140`, `apps/web/components/chat/virtual-message-list.tsx:25-170`).
+### 核心业务流程
 
-### 会话状态与操作
-- **Zustand Store**：`useConversationDataStore` 管理当前用户的会话/消息缓存，可直接搬迁作为前端状态层（`apps/web/lib/stores/conversation-data.ts:1-154`).
-- **高阶 Hook**：`useConversationManager`、`useMessageSender`、`useConversationLoader`、`useStreamHandler`、`useSearchState` 提供分层架构；迁移时保留 Hook 结构，但需替换内部 data/service 调用（`apps/web/lib/hooks/useConversationManager.ts:52-239`, `apps/web/lib/hooks/conversation/useMessageSender.ts:32-187`).
-- **会话操作 UI**：`ConversationHistory`、`ConversationList`、`RenameDialog`、`DeleteConfirmationDialog` 提供 rename/delete UI 与交互（`apps/web/components/sidebar/conversation-history.tsx:1-72`, `apps/web/components/conversation/conversation-list.tsx:1-88`).
+#### 认证流程
+- 首次进入应用时读取持久化凭证，校验通过后加载用户与会话数据。
+- 支持邮箱 + 密码注册/登录（Supabase OTP + Password），成功后刷新访问令牌并同步本地状态。
+- 退出登录时清理所有会话缓存与临时消息，回到访客态。
 
-### 认证与用户会话
-- **Context 与 Provider**：`AuthProvider` + `useAuth` + `RequireAuth` 组合负责登录态检测、重定向、验证码流程（`apps/web/lib/contexts/auth.context.tsx:11-233`).
-- **认证 UI**：`components/auth` 下的表单与布局可复用，需要移除或隐藏第三方登录入口以简化 Supabase 集成。
+#### 会话生命周期
+- 创建会话：通过 Supabase 插入记录并返回最终 ID，前端同步更新。
+- 切换会话：加载目标摘要与最近消息，同时终止当前流式响应。
+- 删除/重命名：调用 Supabase Service 层操作，前端乐观更新，失败回滚并提示。
 
-### 通用工具
-- **异步状态与错误体系**：`useAsyncState`, `ChatError`, `CHAT_CONFIG`, `useVirtualScrolling` 提供统一 loading/错误/滚动逻辑，应直接迁移（`apps/web/lib/hooks/useAsyncState.ts:1-136`, `apps/web/lib/errors/chat-error.ts:1-152`, `apps/web/lib/constants/chat.ts:1-44`, `apps/web/lib/hooks/useVirtualScrolling.ts:1-49`).
-- **国际化**：`lib/i18n-setup.ts` + `@moryflow/shared-i18n` translations，实现多语言 Hook 与资源加载（`apps/web/lib/i18n-setup.ts:1-200`). 迁移时将 `packages/shared-i18n/src` 精简复制到新仓库（如 `src/i18n/`），保留 `translations`、`hooks`、`components/I18nProvider` 等必要文件。
+#### 消息流转
+- 用户输入后立即生成临时消息推送至列表，触发发送任务。
+- Supabase Edge Function 返回流式 token 后累加至同一条 AI 消息，维持滚动定位。
+- 响应完成或失败后更新消息状态，并在失败场景提供重试入口。
 
-## 需剔除的模块
-- 笔记相关所有目录：`components/notes`, `lib/stores/notes-*`, `lib/services/vector-sync.ts` 等。
-- 音频、拖拽、搜索对话框等与核心聊天无关的 UI（保留后续扩展空间但默认不引用）。
-- IndexedDB / `@moryflow/shared-storage` 等本地缓存实现。
+#### 个性化设置
+- 国际化语言与主题划分为轻量级全局设置切片，持久化到本地存储。
+- 模型参数（模型 ID、temperature 等）按会话维度保存，允许不同对话独立配置。
 
-## Supabase 替换策略
-### 认证层
-- 当前 `auth.service.ts` 依赖 `@moryflow/shared-api` 登录/注册接口与本地 token 缓存（`apps/web/lib/services/auth.service.ts:1-200`).
-- Supabase 方案：在新项目中实现 `lib/services/supabase-auth.ts`：
-  - 使用 `@supabase/supabase-js` 管理 email/password 注册、登录、Session 恢复、验证码（若需要 magic link 可扩展）。
-  - 适配 `AuthProvider`：替换 `authService.signIn/signUp/signOut/sendVerificationCode/getCurrentUser/isAuthenticated` 的实现，并改用 Supabase session 监听。
+### 核心数据结构
+```ts
+type MessageRole = 'user' | 'assistant' | 'system'
+type MessageStatus = 'pending' | 'streaming' | 'done' | 'error'
 
-### 会话与消息持久化
-- 现有 `conversation-service.ts` + `useMessageSender` 通过 `@moryflow/shared-storage` (IndexedDB) 本地持久化并同步到 `@moryflow/shared-api`；迁移后直接使用 Supabase 表 (`conversations`, `messages`)：
-  - 新建 `lib/services/supabase-conversations.ts`：封装 `ensureConversation`, `fetchConversations`, `fetchMessages`, `renameConversation`, `deleteConversation`, `upsertMessage` 调用。
-  - `useMessageSender`/`useConversationLoader` 内调用改为 Supabase 版本；去掉 `storageApi` 依赖与临时 ID 生成逻辑，改为 Supabase 返回的 UUID 或使用 `crypto.randomUUID()` 作为前端临时占位。
-  - Supabase Edge Function 完成 OpenAI 请求后写入消息表，实现最终数据落库。
+type TokenUsage = {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
 
-### 流式响应 (SSE)
-- 当前 `completionsStream` 通过 `@moryflow/shared-sse` 调用后端 `/v1/chat/completions` 并解析 OpenAI SSE（`apps/web/lib/api/conversation-web.ts:48-154`, `packages/shared-sse/src/web.ts:1-116`).
-- Supabase 替换：
-  - 在 Supabase Edge Function 中实现 OpenAI/Claude 流式代理，并返回兼容的 SSE 数据。
-  - 在前端创建 `lib/api/supabase-stream.ts`，直接使用 `fetch` + `ReadableStream` 处理 SSE，沿用现有 `SSEEventHandlers` 接口即可。
-  - 更新 `useStreamHandler` 注册的 handlers 以适配新的数据结构（若 payload 与现有 chunk 相同，仅替换导入路径即可）。
+interface User {
+  id: string
+  email?: string
+  displayName?: string
+  avatarUrl?: string
+  createdAt: string
+  updatedAt: string
+}
 
-### 搜索/联网功能
-- `useSearchState` 只管理前端开关与历史，不依赖 `@moryflow/shared-api`；若暂未提供联网搜索，可保留 UI 并禁用后端调用。
+interface Conversation {
+  id: string
+  ownerId: string
+  abstract: string
+  createdAt: string
+  updatedAt: string
+  modelId: string
+  temperature: number
+}
 
-## @moryflow 依赖替换清单
-| 现依赖 | 用途 | 迁移方案 |
-| --- | --- | --- |
-| `@moryflow/shared-api` | HTTP 客户端、认证、会话、SSE token | 使用 Supabase JS 客户端、`fetch`，自定义请求封装；移除 token 缓存改用 Supabase session。 |
-| `@moryflow/shared-storage` | IndexedDB/SQLite 本地缓存 | 删除；所有会话/消息直接访问 Supabase 表。 |
-| `@moryflow/shared-sse` | SSE 启动与解析 | 在项目内实现 `startChatStream`（基于 `fetch` + `ReadableStream`），保留 `SSEHandlers` 类型。 |
-| `@moryflow/shared-i18n` | 多语言 hooks 与资源 | 将核心源码复制到新项目 `src/i18n/`，保留 hooks/Provider/translations，或改用 `react-i18next`。 |
-| `@moryflow/shared-core` | `messageDocRef` 等工具 | 删除；直接使用 Supabase 行 ID。 |
-
-## 推荐目录调整
-```
-src/
-├── app/
-│   ├── providers.tsx            # AuthProvider + I18nProvider
-│   └── router/                  # AppRouter, RequireAuth
-├── components/
-│   ├── chat/                    # Chat UI (从 apps/web/components/chat 拷贝)
-│   ├── sidebar/                 # 会话侧边栏组件
-│   ├── auth/                    # 登录注册 UI
-│   └── ui/                      # shadcn 组件（按需拷贝）
-├── lib/
-│   ├── supabase/                # Supabase 客户端与服务封装
-│   │   ├── client.ts            # createClient + env
-│   │   ├── auth.ts              # 替换 auth.service
-│   │   ├── conversations.ts     # 替换 conversation-service
-│   │   └── streaming.ts         # SSE fetch 工具
-│   ├── contexts/                # AuthContext 等
-│   ├── hooks/                   # useConversationManager 等（移除 shared-* 引用）
-│   ├── stores/                  # Zustand store
-│   ├── constants/               # CHAT_CONFIG 等
-│   └── errors/                  # ChatError
-├── i18n/                        # shared-i18n 精简代码 + translations
-└── types/                       # Conversation/Message 类型
+interface Message {
+  id: string
+  conversationId: string
+  role: MessageRole
+  status: MessageStatus
+  content: string
+  createdAt: string
+  tokenCount?: number
+  metadata?: Record<string, unknown>
+  error?: string
+}
 ```
 
-## 迁移步骤建议
-1. **初始化基础项目**：创建新的 Vite + React + TypeScript + Supabase 项目，配置 Tailwind & shadcn。
-2. **移除笔记模块**：拷贝 `apps/web` 组件时排除 `notes`、`audio`、`dnd` 等目录，清理侧边栏引用。
-3. **复制 UI 与状态层**：将 `components/chat`, `components/sidebar`, `components/auth`, `lib/hooks`, `lib/stores`, `lib/constants`, `lib/errors`, `lib/i18n-setup.ts` 迁移到新目录，修正导入路径。
-4. **实现 Supabase Service 层**：
-   - 建立 `lib/supabase/client.ts`（`createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)`）。
-   - 编写 `supabase-auth.ts`, `supabase-conversations.ts`, `supabase-messages.ts`，替换 Hook 内部调用。
-   - 实现 `supabase-stream.ts`，封装 Edge Function `fetch` + SSE 解析逻辑。
-5. **替换 Hook 中依赖**：在 `useConversationManager`、`useMessageSender`、`useStreamHandler` 中替换 `@moryflow/shared-*` 导入；保留乐观更新与错误处理结构。
-6. **接入多语言**：将 `packages/shared-i18n/src` 精简复制到 `src/i18n/`，保持 `useTranslation` API 与现有组件兼容；配置语言资源加载方式（静态 JSON 或按需导入）。
-7. **测试与清理**：确认登录、会话 CRUD、消息流、流式响应、国际化切换、错误提示全部可用；删除已不再使用的工具函数与类型。
+### 状态切片
+```ts
+interface ConversationDataState {
+  currentUserId: string | null
+  conversations: Record<string, Conversation>
+  currentConversationId: string | null
+  messagesByConversation: Record<string, Message[]>
+}
 
-## 后续考虑
-- 流式 Edge Function 返回格式需与当前 `isChatCompletionChunk` 兼容，或调整 `useStreamHandler` 解析逻辑。
-- 国际化资源应根据最终支持语言（中文/英文/日文/德文/阿拉伯语）裁剪，避免打包体积过大。
-- 在 Supabase 端为 `conversations`、`messages` 实施计划中的 RLS、触发器与索引，匹配 `docs/ai-chatbot-implementation-plan.md` 定义。
+interface UiState {
+  isSidebarOpen: boolean
+  activeComposerMode: 'chat' | 'prompt'
+  language: 'en' | 'zh-CN' | 'ja' | 'de' | 'ar'
+  theme: 'light' | 'dark' | 'system'
+}
 
-## TODO（按执行顺序）
-- [x] 初始化新的 Vite + React + TypeScript + Tailwind/shadcn 项目骨架。
-- [x] 拷贝并整理 UI/状态层（聊天组件、侧边栏、认证 UI、Zustand、hooks、错误处理、i18n），去除 notes/audio 等多余模块，修正导入路径并移除 `@moryflow/shared-*` 依赖。
-- [x] 调整路由与布局：接入 `AppRouter`、`AppShellLayout`、`RequireAuth`，确认多语言 Provider 正常运行。
-  - 创建了 `src/router/layouts/app-shell-layout.tsx`（结合 RequireAuth + SidebarLayout）
-  - 创建了 `src/router/layouts/auth-route-layout.tsx`（结合 PublicOnlyRoute + AuthLayout）
-  - 创建了 `src/app/seo/seo.tsx` SEO 组件（基于 react-helmet-async）
-  - 调整了页面文件路径：`home-page.tsx`、`not-found-page.tsx`，确保导出方式与路由配置匹配
-  - 从路由中移除了 notes 相关代码和 `NotesStoreErrorWatcher`
-  - 更新了 `App.tsx` 使用新的 `AppRouter`
-  - 更新了 `main.tsx` 添加 `HelmetProvider`
-  - 运行 `pnpm typecheck` 验证通过，无类型错误
-- [x] 本地验证前端：确保界面编译通过、基础交互（创建对话、发送消息前的乐观更新、侧边栏导航、国际化切换）在无后端的 mock 环境下工作。
-  - 修复了 `vite.config.ts` 中的 `client-error-logger` 插件引用
-  - 安装缺失依赖：`react-helmet-async`、`zustand`、`@tanstack/react-virtual`、`motion`、`react-markdown`、`remark-gfm`、`@radix-ui/*` 等
-  - 创建了缺失的 hook 文件：
-    - `src/hooks/use-conversation-actions.ts` - 对话操作（重命名、删除）
-    - `src/components/hooks/use-mobile.tsx` - 移动端检测
-  - 修复了导入路径问题：将 `@/components/lib/utils` 改为 `@/lib/utils`
-  - 简化了 `SidebarUserMenu` 组件，移除了设置对话框功能（非核心功能）
-  - 开发服务器启动成功：`http://localhost:3000/`
-  - TypeScript 类型检查通过：`pnpm typecheck` ✅
-  - 生产构建成功：`pnpm build` ✅（输出 ~900KB gzipped）
-- [ ] 构建 Supabase service 层：实现 `client.ts`、`supabase-auth.ts`、`supabase-conversations.ts`、`supabase-stream.ts`，替换 hooks 内部调用逻辑。
-- [ ] 实现 Supabase Edge Function 处理 AI 流式回复，并与前端 SSE 解析对接。
-- [ ] 配置 Supabase 数据库结构（表/索引/RLS/触发器）并与前端整合测试。
+interface StreamingState {
+  isSending: boolean
+  inflightMessageId: string | null
+  inflightController?: AbortController
+  pendingRetryMessage?: Message
+}
+```
+
+### 模块职责划分
+- **UI 层**：页面与复用组件，负责展示数据与派发用户行为。
+- **业务层**：自定义 Hook（聊天控制器、认证守卫等）串联状态与 service。
+- **数据层**：Zustand store 与 React Context，确保状态来源单一且可追踪。
+- **服务层**：认证、聊天与配置 API，统一处理请求、节流、缓存与错误映射。
+- **工具层**：常量、类型、日志与格式化方法，供跨模块复用。
+
+### 状态管理策略
+- 会话与消息按会话 ID 归档；当前会话消息驻留内存，其余按需懒加载。
+- 发送流程通过单例任务队列驱动，避免并发写入导致的竞态。
+- UI 轻状态与数据状态分离，减少渲染扩散。
+- SSE 与 Fetch 请求统一挂载可取消 controller，确保切换或终止时释放资源。
+
+### 服务与接口边界
+- 认证服务通过 Supabase 实现 `signIn`、`signUp`、`sendVerificationCode`、`signOut` 等能力，统一映射错误码。
+- 聊天服务基于 Supabase 表管理会话与消息，封装 `ensureConversation`、`fetchMessages`、`appendMessage` 等方法。
+- 流式服务使用 Supabase Edge Function，输出标准 `chunk/done/error` 事件供前端解析。
+
+### 错误处理与监控
+- 所有服务返回 `Result` 结构；UI 仅消费成功路径并在失败时渲染提示。
+- 关键事件打点：登录、会话 CRUD、消息发送、流式失败。
+- 性能指标：首屏渲染、首个 token 返回时间、长列表渲染耗时。
+
+### 安全与合规
+- 访问令牌保存在内存并按需刷新，刷新令牌通过 HttpOnly Cookie 管理。
+- 删除会话、重置账号等敏感操作要求二次确认与审计日志。
+- 国际化插值统一走安全模板，避免 XSS 风险。
+
+### 长期演进路线
+- **V1**：完成认证、基础会话管理与流式对话。
+- **V2**：增强内容呈现（Markdown、代码高亮、Mermaid）与消息操作（编辑、导出）。
+- **V3**：支持多模型切换、语音/多模态能力及插件扩展，配合配额与成本监控。
+- **持续优化**：根据业务需要拓展观测指标，引入队列/缓存提升吞吐，增加企业级权限控制。
+
+---
+
+## Supabase 集成进度
+
+- [x] 构建 Supabase service 层
+  - `src/lib/supabase/client.ts` 提供统一 `createSupabaseClient`、会话存取、`onAuthStateChange` 事件。
+  - `src/lib/services/supabase-auth.ts` + `auth.service.ts`：实现密码登录、验证码注册/登录、用户资料更新，统一错误码映射。
+  - `src/lib/services/supabase-conversations.ts` 与 `conversation-service.ts`：会话/消息 CRUD 接入 Supabase 表。
+  - `src/lib/services/supabase-stream.ts` + `completionsStream`：通过 Edge Function 获取 SSE，并在前端解析 `chunk/done/error`。
+  - Hooks (`useConversationManager`, `useMessageSender`, `useStreamHandler`) 已切换到新服务实现，完成会话与消息数据拉取。
+
+- [x] 实现 Supabase Edge Function 处理 AI 流式回复，并与前端 SSE 解析对接。
+- [x] 配置 Supabase 数据库结构（表/索引/RLS/触发器）并完成前端整合测试。
 - [ ] 进行端到端测试（认证、会话 CRUD、流式响应、国际化），清理临时代码与依赖。
-- [ ] review，整理不需要的代码，代码简洁
+- [ ] Review 并移除无用代码，保持仓库整洁。
 
+### Supabase Edge Function：`chat-stream`
+- 请求负载
+  ```json
+  {
+    "conversationId": "uuid",
+    "messages": [{ "role": "user", "content": "..." }],
+    "userId": "uuid",
+    "model": { "id": "gpt-4o-mini", "temperature": 0.2, "maxOutputTokens": 2048 }
+  }
+  ```
+- 执行流程
+  1. 通过 `auth.getUser()` 校验请求者，并确认 `conversationId` 归属本人。
+  2. 调用模型供应商获取流式响应，逐片段写入 `event: chunk`。
+  3. 响应完成前推送 `event: metadata`（token usage），结束时发送 `event: done`。
+  4. 失败时写入 `messages` 表错误状态并发送 `event: error`。
+  5. 成功后更新 `messages` 内容与 `token_count`，同步 `conversations.updated_at`。
+- 辅助：`createUsageMeter()` 统计 prompt/completion token，`assertRlsOwnership()` 保证 RLS 环境下访问安全。
 
-！！！！
-使用 codex 开始写下面的逻辑
-！！！！
+**实现说明**
+- 位置：`supabase/functions/chat-stream/index.ts`。
+- 鉴权：使用请求头携带的 Supabase JWT，二次校验会话归属，未经授权返回 401/403。
+- 流式输出：优先调用 OpenAI（需配置 `OPENAI_API_KEY`），若缺省则返回占位回复；统一输出 `chunk` / `metadata` / `error` / `done` 事件。
+- 错误处理：捕获上游或解析异常，通过 `event: error` 反馈到前端，并记录日志。
+
+### 数据库结构与 RLS
+- `profiles`
+  - 列：`id uuid PK references auth.users`, `display_name text`, `avatar_url text`, `created_at timestamptz default now()`。
+  - Policy：`select/update` 仅允许 `auth.uid() = id`；注册完成后由触发器自动插入。
+- `conversations`
+  - 列：`id uuid`, `owner_id uuid not null references auth.users`, `abstract text`, `model_id text`, `temperature real default 0.2`, `created_at timestamptz default now()`, `updated_at timestamptz default now()`。
+  - 索引：`idx_conversations_owner_updated (owner_id, updated_at desc)`。
+  - Policy：`select/insert/update/delete` 均限制 `owner_id = auth.uid()`。
+  - 触发器：`moddatetime` 自动维护 `updated_at`。
+- `messages`
+  - 列：`id uuid`, `conversation_id uuid references conversations on delete cascade`, `owner_id uuid`, `role text`, `status text`, `content text`, `metadata jsonb`, `token_count integer`, `error text`, `created_at timestamptz default now()`。
+  - 索引：`idx_messages_conversation_created (conversation_id, created_at)`, `idx_messages_owner_created (owner_id, created_at)`。
+  - Policy：用户态要求 `owner_id = auth.uid()`；服务角色（Edge Function）插入助手消息需校验 `auth.jwt() ->> 'role' = 'service'`。
+  - 触发器：`before insert` 若 `owner_id` 为空则填充 `auth.uid()`。
+- 视图与统计
+  - `conversation_summaries`：聚合最近消息摘要及 token 统计，供列表页快速展示。
+  - `user_usage_daily`：按用户与日期汇总调用次数与 token 消耗，为配额与账单提供基础数据。
+- 部署脚本
+  ```sql
+  create extension if not exists moddatetime;
+
+  create trigger update_conversations_updated_at
+    before update on conversations
+    for each row execute procedure moddatetime (updated_at);
+
+  create trigger populate_message_owner
+    before insert on messages
+    for each row execute procedure set_owner_from_auth();
+  ``` 
+  - `set_owner_from_auth()`：PL/pgSQL 函数从 `auth.uid()` 填充 `owner_id`，服务角色可显式传入值。
+
+**实现说明**
+- 迁移文件：`supabase/migrations/20241120000100_create_chat_tables.sql`。
+- 包含 `profiles` 同步触发器、会话/消息表、RLS 策略、索引及 usage 汇总表。
+- 视图 `conversation_summaries` 用于列表摘要（基于 `auth.uid()`），可配合 Supabase Row Level Security。
+
+### 集成与验证计划
+- 本地通过 `supabase db reset` + `supabase functions serve` 启动数据库与 Edge Function，配合 `supabase-js` mock 模型响应完成端到端测试。
+- 前端 `AuthProvider`：拉取 `supabase.auth.getSession` → 写入状态 → 订阅 `onAuthStateChange`。
+- `useConversationManager`：首屏并行加载会话与消息，完成后存入 Zustand。
+- `useMessageSender`：`appendMessage` 插入用户消息，`completionsStream` 解析 SSE，结束时调用 `updateMessage` 持久化内容。
+- 覆盖测试：认证注册/登录、会话 CRUD、流式消息成功与失败、RLS 拒绝跨用户访问、国际化切换后的读写能力。

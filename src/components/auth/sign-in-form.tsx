@@ -101,6 +101,7 @@ export function SignInForm() {
             strategy: 'code',
             email,
             code,
+            purpose: 'login',
           })
         }
       } catch (error) {
@@ -167,6 +168,7 @@ export function SignInForm() {
           strategy: 'code',
           email,
           code,
+          purpose: 'reset',
         })
 
         // TODO: 登录成功后可以引导用户修改密码

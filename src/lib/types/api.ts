@@ -48,58 +48,6 @@ export interface User {
   updatedAt?: string
 }
 
-export interface SSESearchSource {
-  title: string
-  url: string
-  snippet: string
-  favicon?: string
-}
-
-export type SearchPhase = 'detected' | 'started' | 'progress' | 'complete' | 'error'
-
-export interface SSESearchStatus {
-  type: 'search_status'
-  phase: SearchPhase
-  query: string
-  domain?: 'web' | 'news' | 'images' | 'videos' | 'academic'
-  language?: string
-  timeRange?: 'day' | 'week' | 'month' | 'year'
-  progress?: {
-    fetchedItems?: number
-    totalItems?: number
-  }
-  error?: string
-}
-
-export interface SSESearchSources {
-  type: 'search_sources'
-  sources: SSESearchSource[]
-}
-
-export interface WebSearchConfig {
-  language?: string
-  timeRange?: 'day' | 'week' | 'month' | 'year'
-  domain?: 'web' | 'news' | 'images' | 'videos' | 'academic'
-}
-
-export interface SearchEvent {
-  id: string
-  conversationId: string
-  messageId?: string
-  userId: string
-  query: string
-  domain: string
-  language?: string
-  timeRange?: string
-  resolvedEngines: string[]
-  resultsCount: number
-  durationMs: number
-  cached: boolean
-  topSources: SSESearchSource[]
-  error?: string
-  createdAt: string
-}
-
 const AUTH_ERROR_CODES = new Set<string>([
   ErrorCode.AUTH_TOKEN_EXPIRED,
   ErrorCode.AUTH_TOKEN_INVALID,
